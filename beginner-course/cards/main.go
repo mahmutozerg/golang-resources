@@ -2,13 +2,8 @@ package main
 
 func main() {
 
-	dck := newDeck()
-
-	hand, remainingDeck := deal(dck, 5)
-
-	hand.print()
-	remainingDeck.print()
-
+	cards := newDeck()
+	cards.print()
 }
 
 func newCard() string {
