@@ -1,38 +1,43 @@
 package helper
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
-	"scrapper/constants"
 	"strings"
 )
 
-func AssertErrorToNil(err error, message ...string) {
+func WrapError(err error, msg ...string) error {
 	if err == nil {
-		return
+		return nil
 	}
 
-	if len(message) > 0 {
-		panic(fmt.Sprintf("%s: %s", strings.Join(message, " "), err.Error()))
+	if len(msg) > 0 {
+		return fmt.Errorf("%s: %w", strings.Join(msg, " "), err)
 	}
 
-	panic(err.Error())
+	return err
 }
 
-func AssertNotEmpty(value string, name string) {
-	if len(value) == 0 {
-		panic(fmt.Sprintf("%s cannot be empty", name))
+func ValidateNotEmpty(value, name string) error {
+	if strings.TrimSpace(value) == "" {
+		return fmt.Errorf("%s cannot be empty", name)
 	}
+	return nil
 }
 
-func IsValidURL(u string) error {
-	parsed, err := url.ParseRequestURI(u)
+func ValidateURL(rawURL string) error {
+	if strings.TrimSpace(rawURL) == "" {
+		return errors.New("url cannot be empty")
+	}
+
+	parsed, err := url.ParseRequestURI(rawURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid url: %w", err)
 	}
 
 	if parsed.Scheme == "" || parsed.Host == "" {
-		return fmt.Errorf(constants.InvalidUrl)
+		return errors.New("invalid url: missing scheme or host")
 	}
 
 	return nil

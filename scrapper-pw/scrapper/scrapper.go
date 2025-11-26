@@ -1,6 +1,10 @@
 package scrapper
 
 import (
+	"encoding/json"
+	"fmt"
+	"time"
+
 	"github.com/playwright-community/playwright-go"
 )
 
@@ -53,6 +57,38 @@ func NewScrapper(bwp []string) (*Scrapper, error) {
 		Browser: browser,
 		Context: context,
 	}, nil
+}
+
+func (s *Scrapper) SetupHooks() {
+	s.Context.OnRequest(func(req playwright.Request) {
+		switch req.ResourceType() {
+		case "document", "xhr", "fetch":
+			logData := map[string]interface{}{
+				"direction": "request",
+				"method":    req.Method(),
+				"type":      req.ResourceType(),
+				"url":       req.URL(),
+				"timestamp": time.Now().Format(time.RFC3339),
+			}
+			jsonLog, _ := json.Marshal(logData)
+			fmt.Println(string(jsonLog))
+		}
+	})
+
+	s.Context.OnResponse(func(res playwright.Response) {
+		switch res.Request().ResourceType() {
+		case "document", "xhr", "fetch":
+			logData := map[string]interface{}{
+				"direction": "response",
+				"status":    res.Status(),
+				"type":      res.Request().ResourceType(),
+				"url":       res.URL(),
+				"timestamp": time.Now().Format(time.RFC3339),
+			}
+			jsonLog, _ := json.Marshal(logData)
+			fmt.Println(string(jsonLog))
+		}
+	})
 }
 
 func (s *Scrapper) Close() {

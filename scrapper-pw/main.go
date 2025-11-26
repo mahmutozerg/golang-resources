@@ -1,18 +1,25 @@
 package main
 
 import (
-	"scrapper/constants"
+	"log"
 	"scrapper/helper"
 	"scrapper/scrapper"
 )
 
 func main() {
+	// Get available browsers
+	browsers := helper.GetAvailableBrowsers()
 
-	abs := helper.GetAvailableBrowsers()
-
-	scr, err := scrapper.NewScrapper(abs)
-
-	helper.AssertErrorToNil(err, constants.GeneralFailure)
+	// Create scrapper
+	scr, err := scrapper.NewScrapper(browsers)
+	if err != nil {
+		log.Fatalf("failed to create scrapper: %v", err)
+	}
 	defer scr.Close()
+
+	scr.SetupHooks()
+	scr.NewPage()
+
+	scr.GoTo("https://www.google.com")
 
 }

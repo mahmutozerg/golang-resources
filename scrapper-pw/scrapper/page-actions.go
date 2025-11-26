@@ -7,22 +7,28 @@ import (
 	"github.com/playwright-community/playwright-go"
 )
 
-func (s *Scrapper) NewPage() {
-
+func (s *Scrapper) NewPage() error {
 	page, err := s.Context.NewPage()
-	helper.AssertErrorToNil(err, constants.FailureNewPage)
+	if err != nil {
+		return helper.WrapError(err, constants.FailureNewPage)
+	}
+
 	s.Page = page
+	return nil
 }
 
-func (s *Scrapper) GoTo(url string) {
-
-	if err := helper.IsValidURL(url); err != nil {
-		panic(constants.GeneralFailure)
+func (s *Scrapper) GoTo(url string) error {
+	if err := helper.ValidateURL(url); err != nil {
+		return helper.WrapError(err, constants.InvalidUrl)
 	}
 
 	_, err := s.Page.Goto(url, playwright.PageGotoOptions{
 		WaitUntil: playwright.WaitUntilStateDomcontentloaded,
 	})
 
-	helper.AssertErrorToNil(err, constants.FailedGoTo)
+	if err != nil {
+		return helper.WrapError(err, constants.FailedGoTo)
+	}
+
+	return nil
 }
