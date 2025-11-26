@@ -8,7 +8,7 @@ import (
 
 func main() {
 
-	abs := constants.GetAvailableBrowsers()
+	abs := helper.GetAvailableBrowsers()
 
 	scr, err := scrapper.NewScrapper(abs)
 
