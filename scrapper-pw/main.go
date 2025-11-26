@@ -10,8 +10,7 @@ func main() {
 
 	abs := constants.GetAvailableBrowsers()
 
-	helper.AssertNotEmpty(abs[0], "Available browser")
-	scr, err := scrapper.NewScrapper(abs[0])
+	scr, err := scrapper.NewScrapper(abs)
 
 	helper.AssertErrorToNil(err, constants.GeneralFailure)
 	defer scr.Close()

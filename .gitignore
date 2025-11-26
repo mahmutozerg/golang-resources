@@ -1,32 +1,158 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+############################################################
+#                    GO BUILD ARTIFACTS
+############################################################
+
+# Binaries (Go outputs)
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary, built with `go test -c`
 *.test
 
-# Code coverage profiles and other test artifacts
+# Build directories
+/bin/
+/build/
+/dist/
+/out/
+
+# Coverage & profiling
 *.out
-coverage.*
-*.coverprofile
-profile.cov
+*.prof
+*.pprof
 
-# Dependency directories (remove the comment below to include it)
-vendor/
-
-# Go workspace file
+# Go modules & workspace
 go.work
 go.work.sum
 
-# env file
-.env
+# Vendor (optional: remove if you commit vendor/)
+vendor/
 
-# Editor/IDE
- .idea/
+############################################################
+#                      OS-SPECIFIC
+############################################################
+
+# ---------------- macOS ----------------
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails & metadata
+._*
+
+# macOS folders
+.Spotlight-V100
+.Trashes
+
+# AFP/Netatalk
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+
+# ---------------- Windows ----------------
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Windows installer caches
+*.msi
+*.msix
+*.msm
+*.msp
+
+# Windows shortcuts
+*.lnk
+
+# ---------------- Linux ----------------
+*~
+.nfs*
+
+############################################################
+#                      IDEs / EDITORS
+############################################################
+
+# ------------ VS Code --------------
 .vscode/
+.history/
+*.code-workspace
+
+# ------------ GoLand / IntelliJ --------------
+.idea/
+*.iml
+
+# ------------ Sublime --------------
+*.sublime-workspace
+*.sublime-project
+
+# ------------ Vim --------------
+*.swp
+*.swo
+*.swm
+*.tmp
+
+# ------------ Emacs --------------
+*~
+\#*\#
+.\#*
+
+# ------------ JetBrains --------------
+out/
+
+# ------------ Eclipse --------------
+.project
+.classpath
+.settings/
+
+# ------------ Visual Studio / C# --------------
+.vs/
+*.user
+*.suo
+
+############################################################
+#                OTHER COMMON ARTIFACTS
+############################################################
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.old
+
+# Archives
+*.zip
+*.tar
+*.gz
+*.rar
+*.7z
+
+# Python virtual environments (in case used for tooling)
+venv/
+.env/
+
+# Node (optional if using front-end with Go)
+node_modules/
+
+# dotenv files
+.env.local
+.env.*.local
+
+############################################################
+#                Docker / Containers
+############################################################
+Dockerfile~
+*.pid
+
+############################################################
+#                GENERAL MISC PATTERNS
+############################################################
+*.lock
+*.cache
+.cache/
+tmp/
+temp/

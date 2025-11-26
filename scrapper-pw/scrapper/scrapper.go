@@ -1,9 +1,6 @@
 package scrapper
 
 import (
-	"scrapper/constants"
-	"scrapper/helper"
-
 	"github.com/playwright-community/playwright-go"
 )
 
@@ -14,13 +11,14 @@ type Scrapper struct {
 	Page    playwright.Page
 }
 
-func NewScrapper(bwp ...string) (*Scrapper, error) {
-	runOption := &playwright.RunOptions{
-		SkipInstallBrowsers: true,
-	}
-	err := playwright.Install(runOption)
+func NewScrapper(bwp []string) (*Scrapper, error) {
 
-	if err != nil {
+	// Install options
+	runOption := &playwright.RunOptions{
+		SkipInstallBrowsers: len(bwp) != 0,
+	}
+
+	if err := playwright.Install(runOption); err != nil {
 		return nil, err
 	}
 
@@ -29,23 +27,23 @@ func NewScrapper(bwp ...string) (*Scrapper, error) {
 		return nil, err
 	}
 
-	option := playwright.BrowserTypeLaunchOptions{
-		ExecutablePath: playwright.String(bwp[0]),
-		Headless:       playwright.Bool(false),
+	launchOptions := playwright.BrowserTypeLaunchOptions{
+		Headless: playwright.Bool(false),
 	}
 
-	browser, err := pw.Chromium.Launch(option)
-	helper.AssertErrorToNil(err, constants.FailedLaunchLocalBrowser)
+	if len(bwp) != 0 {
+		launchOptions.ExecutablePath = playwright.String(bwp[0])
+	}
+
+	browser, err := pw.Chromium.Launch(launchOptions)
+	if err != nil {
+		return nil, err
+	}
 
 	context, err := browser.NewContext(playwright.BrowserNewContextOptions{
 		UserAgent: playwright.String("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 		Locale:    playwright.String("en-US"),
 	})
-
-	if err != nil {
-		return nil, err
-	}
-
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +56,16 @@ func NewScrapper(bwp ...string) (*Scrapper, error) {
 }
 
 func (s *Scrapper) Close() {
-	s.Browser.Close()
-	s.PW.Stop()
+	if s.Page != nil {
+		s.Page.Close()
+	}
+	if s.Context != nil {
+		s.Context.Close()
+	}
+	if s.Browser != nil {
+		s.Browser.Close()
+	}
+	if s.PW != nil {
+		s.PW.Stop()
+	}
 }
