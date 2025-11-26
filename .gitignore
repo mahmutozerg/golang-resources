@@ -1,8 +1,14 @@
 ############################################################
-#                    GO BUILD ARTIFACTS
+#                    GLOBAL GO IGNORE
 ############################################################
 
-# Binaries (Go outputs)
+# Ignore all bin folders in ALL subprojects
+bin/
+build/
+dist/
+out/
+
+# Go build artifacts
 *.exe
 *.exe~
 *.dll
@@ -10,115 +16,89 @@
 *.dylib
 *.test
 
-# Build directories
-/bin/
-/build/
-/dist/
-/out/
-
-# Coverage & profiling
+# Coverage & profiling files
 *.out
 *.prof
 *.pprof
 
-# Go modules & workspace
+# Go workspace files
 go.work
 go.work.sum
 
-# Vendor (optional: remove if you commit vendor/)
+# Vendor (optional)
 vendor/
 
 ############################################################
 #                      OS-SPECIFIC
 ############################################################
 
-# ---------------- macOS ----------------
+# macOS
 .DS_Store
 .AppleDouble
 .LSOverride
-
-# Thumbnails & metadata
 ._*
-
-# macOS folders
 .Spotlight-V100
 .Trashes
-
-# AFP/Netatalk
 .AppleDB
 .AppleDesktop
 Network Trash Folder
 Temporary Items
 
-# ---------------- Windows ----------------
+# Windows
 Thumbs.db
 Thumbs.db:encryptable
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
-
-# Windows installer caches
 *.msi
 *.msix
 *.msm
 *.msp
-
-# Windows shortcuts
 *.lnk
 
-# ---------------- Linux ----------------
+# Linux
 *~
 .nfs*
 
 ############################################################
-#                      IDEs / EDITORS
+#                      IDE / EDITORS
 ############################################################
 
-# ------------ VS Code --------------
+# VS Code
 .vscode/
 .history/
 *.code-workspace
 
-# ------------ GoLand / IntelliJ --------------
+# GoLand / IntelliJ
 .idea/
 *.iml
 
-# ------------ Sublime --------------
+# Sublime
 *.sublime-workspace
 *.sublime-project
 
-# ------------ Vim --------------
+# Vim
 *.swp
 *.swo
 *.swm
 *.tmp
 
-# ------------ Emacs --------------
+# Emacs
 *~
 \#*\#
 .\#*
 
-# ------------ JetBrains --------------
+# JetBrains
 out/
 
-# ------------ Eclipse --------------
-.project
-.classpath
-.settings/
-
-# ------------ Visual Studio / C# --------------
-.vs/
-*.user
-*.suo
-
 ############################################################
-#                OTHER COMMON ARTIFACTS
+#                   OTHER COMMON ARTIFACTS
 ############################################################
 
 # Logs
 *.log
 
-# Temporary files
+# Temp files
 *.tmp
 *.temp
 *.bak
@@ -131,28 +111,20 @@ out/
 *.rar
 *.7z
 
-# Python virtual environments (in case used for tooling)
+# Python venv
 venv/
 .env/
 
-# Node (optional if using front-end with Go)
+# Node
 node_modules/
 
-# dotenv files
+# dotenv
 .env.local
 .env.*.local
 
 ############################################################
-#                Docker / Containers
+#                   DOCKER / CONTAINERS
 ############################################################
 Dockerfile~
 *.pid
 
-############################################################
-#                GENERAL MISC PATTERNS
-############################################################
-*.lock
-*.cache
-.cache/
-tmp/
-temp/
