@@ -86,6 +86,7 @@ func NewScrapper(so ScrapperOptions) (*Scrapper, error) {
 			return nil, err
 		}
 	}
+
 	return &Scrapper{
 		PW:       pw,
 		Browser:  browser,
