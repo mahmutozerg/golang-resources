@@ -15,6 +15,15 @@ type Scrapper struct {
 	Page    playwright.Page
 }
 
+type NetworkTraffic struct {
+	Direction string `json:"direction"`
+	Method    string `json:"method,omitempty"`
+	Status    int    `json:"status,omitempty"`
+	Type      string `json:"type"`
+	URL       string `json:"url"`
+	Timestamp string `json:"timestamp"`
+}
+
 func NewScrapper(bwp []string) (*Scrapper, error) {
 
 	// Install options
@@ -59,38 +68,6 @@ func NewScrapper(bwp []string) (*Scrapper, error) {
 	}, nil
 }
 
-func (s *Scrapper) SetupHooks() {
-	s.Context.OnRequest(func(req playwright.Request) {
-		switch req.ResourceType() {
-		case "document", "xhr", "fetch":
-			logData := map[string]interface{}{
-				"direction": "request",
-				"method":    req.Method(),
-				"type":      req.ResourceType(),
-				"url":       req.URL(),
-				"timestamp": time.Now().Format(time.RFC3339),
-			}
-			jsonLog, _ := json.Marshal(logData)
-			fmt.Println(string(jsonLog))
-		}
-	})
-
-	s.Context.OnResponse(func(res playwright.Response) {
-		switch res.Request().ResourceType() {
-		case "document", "xhr", "fetch":
-			logData := map[string]interface{}{
-				"direction": "response",
-				"status":    res.Status(),
-				"type":      res.Request().ResourceType(),
-				"url":       res.URL(),
-				"timestamp": time.Now().Format(time.RFC3339),
-			}
-			jsonLog, _ := json.Marshal(logData)
-			fmt.Println(string(jsonLog))
-		}
-	})
-}
-
 func (s *Scrapper) Close() {
 	if s.Page != nil {
 		s.Page.Close()
@@ -104,4 +81,38 @@ func (s *Scrapper) Close() {
 	if s.PW != nil {
 		s.PW.Stop()
 	}
+}
+
+func (s *Scrapper) SetupHooks() {
+	s.Context.OnRequest(func(req playwright.Request) {
+		switch req.ResourceType() {
+		case "document", "xhr", "fetch":
+			logData := NetworkTraffic{
+				Direction: "request",
+				Method:    req.Method(),
+				Type:      req.ResourceType(),
+				URL:       req.URL(),
+				Timestamp: time.Now().Format(time.RFC3339),
+			}
+
+			jsonLog, _ := json.Marshal(logData)
+			fmt.Println(string(jsonLog))
+		}
+	})
+
+	s.Context.OnResponse(func(res playwright.Response) {
+		switch res.Request().ResourceType() {
+		case "document", "xhr", "fetch":
+			logData := NetworkTraffic{
+				Direction: "response",
+				Status:    res.Status(),
+				Type:      res.Request().ResourceType(),
+				URL:       res.URL(),
+				Timestamp: time.Now().Format(time.RFC3339),
+			}
+
+			jsonLog, _ := json.Marshal(logData)
+			fmt.Println(string(jsonLog))
+		}
+	})
 }
