@@ -18,20 +18,19 @@ type Scrapper struct {
 	reqFile  *os.File
 	respFile *os.File
 }
+type ScrapperOptions struct {
+	Bwp            []string
+	CreateRespFile bool
+	CreateReqFile  bool
+}
 
-type NetworkTraffic struct {
+type networkTraffic struct {
 	Direction string `json:"direction"`
 	Method    string `json:"method,omitempty"`
 	Status    int    `json:"status,omitempty"`
 	Type      string `json:"type"`
 	URL       string `json:"url"`
 	Timestamp string `json:"timestamp"`
-}
-
-type ScrapperOptions struct {
-	Bwp            []string
-	CreateRespFile bool
-	CreateReqFile  bool
 }
 
 var allowedResources = map[string]bool{
@@ -149,7 +148,7 @@ func (s *Scrapper) SetupHooks() {
 
 		if isNetworkType(req.ResourceType()) {
 
-			s.logToFile(NetworkTraffic{
+			s.logToFile(networkTraffic{
 				Direction: "request",
 				Method:    req.Method(),
 				Type:      req.ResourceType(),
@@ -165,7 +164,7 @@ func (s *Scrapper) SetupHooks() {
 
 		if isNetworkType(res.Request().ResourceType()) {
 
-			s.logToFile(NetworkTraffic{
+			s.logToFile(networkTraffic{
 				Direction: "response",
 				Status:    res.Status(),
 				Type:      res.Request().ResourceType(),
@@ -177,7 +176,7 @@ func (s *Scrapper) SetupHooks() {
 	})
 }
 
-func (s *Scrapper) logToFile(nt NetworkTraffic) {
+func (s *Scrapper) logToFile(nt networkTraffic) {
 
 	jsonLog, err := json.Marshal(nt)
 	if err != nil {
