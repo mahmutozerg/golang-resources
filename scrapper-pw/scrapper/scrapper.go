@@ -34,6 +34,12 @@ type ScrapperOptions struct {
 	CreateReqFile  bool
 }
 
+var allowedResources = map[string]bool{
+	"document": true,
+	"xhr":      true,
+	"fetch":    true,
+}
+
 func NewScrapper(so ScrapperOptions) (*Scrapper, error) {
 
 	// Install options
@@ -142,24 +148,15 @@ func (s *Scrapper) SetupHooks() {
 	s.Context.OnRequest(func(req playwright.Request) {
 
 		if isNetworkType(req.ResourceType()) {
-			logData := NetworkTraffic{
+
+			s.logToFile(NetworkTraffic{
 				Direction: "request",
 				Method:    req.Method(),
 				Type:      req.ResourceType(),
 				URL:       req.URL(),
 				Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
-			}
+			})
 
-			jsonLog, err := json.Marshal(logData)
-			if err != nil {
-				return
-			}
-			if s.reqFile != nil {
-				s.reqFile.Write(jsonLog)
-				s.reqFile.Write([]byte("\n"))
-			} else {
-				fmt.Println(string(jsonLog))
-			}
 		}
 
 	})
@@ -167,35 +164,45 @@ func (s *Scrapper) SetupHooks() {
 	s.Context.OnResponse(func(res playwright.Response) {
 
 		if isNetworkType(res.Request().ResourceType()) {
-			logData := NetworkTraffic{
+
+			s.logToFile(NetworkTraffic{
 				Direction: "response",
 				Status:    res.Status(),
 				Type:      res.Request().ResourceType(),
 				URL:       res.URL(),
 				Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
-			}
-
-			jsonLog, err := json.Marshal(logData)
-			if err != nil {
-				return
-			}
-			if s.respFile != nil {
-				s.respFile.Write(jsonLog)
-				s.respFile.Write([]byte("\n"))
-			} else {
-				fmt.Println(string(jsonLog))
-			}
+			})
 		}
 
 	})
 }
 
-func isNetworkType(t string) bool {
-	switch t {
-	case "document", "xhr", "fetch":
-		return true
+func (s *Scrapper) logToFile(nt NetworkTraffic) {
+
+	jsonLog, err := json.Marshal(nt)
+	if err != nil {
+		return
 	}
-	return false
+	switch nt.Direction {
+	case "response":
+		if s.respFile != nil {
+			s.respFile.Write(jsonLog)
+			s.respFile.Write([]byte("\n"))
+			return
+		}
+	case "request":
+		if s.reqFile != nil {
+			s.reqFile.Write(jsonLog)
+			s.reqFile.Write([]byte("\n"))
+			return
+		}
+	}
+
+	fmt.Println(string(jsonLog))
+
+}
+func isNetworkType(t string) bool {
+	return allowedResources[t]
 }
 
 func createFile(filename string) (*os.File, error) {
