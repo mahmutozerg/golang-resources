@@ -11,7 +11,12 @@ func main() {
 	browsers := helper.GetAvailableBrowsers()
 
 	// Create scrapper
-	scr, err := scrapper.NewScrapper(browsers)
+	scr, err := scrapper.NewScrapper(scrapper.ScrapperOptions{
+		Bwp:            browsers,
+		CreateRespFile: true,
+		CreateReqFile:  true,
+	})
+
 	if err != nil {
 		log.Fatalf("failed to create scrapper: %v", err)
 	}
