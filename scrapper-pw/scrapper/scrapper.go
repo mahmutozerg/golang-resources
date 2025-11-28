@@ -10,19 +10,29 @@ import (
 	"github.com/playwright-community/playwright-go"
 )
 
+const maxSearchDepth = 20
+
 type Scrapper struct {
-	PW       *playwright.Playwright
-	Browser  playwright.Browser
-	Context  playwright.BrowserContext
-	Page     playwright.Page
+	pw       *playwright.Playwright
+	browser  playwright.Browser
+	context  playwright.BrowserContext
+	page     playwright.Page
 	reqFile  *os.File
 	respFile *os.File
+	urls     []string
+	maxDepth int
 }
 type ScrapperOptions struct {
 	Bwp            []string
 	CreateRespFile bool
 	CreateReqFile  bool
 	Headless       bool
+	UrlScrapperOptions
+}
+
+type UrlScrapperOptions struct {
+	MaxDepth        int
+	FollowRedirects bool
 }
 
 type networkTraffic struct {
@@ -92,12 +102,14 @@ func NewScrapper(so ScrapperOptions) (*Scrapper, error) {
 		}
 	}
 
+	so.applyDepthLimit()
 	return &Scrapper{
-		PW:       pw,
-		Browser:  browser,
-		Context:  context,
+		pw:       pw,
+		browser:  browser,
+		context:  context,
 		reqFile:  reqf,
 		respFile: respf,
+		maxDepth: so.MaxDepth,
 	}, nil
 }
 
@@ -105,23 +117,23 @@ func (s *Scrapper) Close() error {
 	var errs []error
 	var err error
 
-	if s.Page != nil {
-		if err = s.Page.Close(); err != nil {
+	if s.page != nil {
+		if err = s.page.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
-	if s.Context != nil {
-		if err = s.Context.Close(); err != nil {
+	if s.context != nil {
+		if err = s.context.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
-	if s.Browser != nil {
-		if err = s.Browser.Close(); err != nil {
+	if s.browser != nil {
+		if err = s.browser.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
-	if s.PW != nil {
-		if err = s.PW.Stop(); err != nil {
+	if s.pw != nil {
+		if err = s.pw.Stop(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -144,7 +156,7 @@ func (s *Scrapper) Close() error {
 }
 
 func (s *Scrapper) SetupHooks() {
-	s.Context.OnRequest(func(req playwright.Request) {
+	s.context.OnRequest(func(req playwright.Request) {
 
 		if isNetworkType(req.ResourceType()) {
 
@@ -160,7 +172,7 @@ func (s *Scrapper) SetupHooks() {
 
 	})
 
-	s.Context.OnResponse(func(res playwright.Response) {
+	s.context.OnResponse(func(res playwright.Response) {
 
 		if isNetworkType(res.Request().ResourceType()) {
 
@@ -200,6 +212,10 @@ func (s *Scrapper) logToFile(nt networkTraffic) {
 	fmt.Println(string(jsonLog))
 
 }
+func (s *Scrapper) GetUrls() []string {
+	return s.urls
+}
+
 func isNetworkType(t string) bool {
 	return allowedResources[t]
 }
@@ -212,4 +228,11 @@ func createFile(filename string) (*os.File, error) {
 	}
 
 	return f, nil
+}
+
+func (s *ScrapperOptions) applyDepthLimit() {
+
+	if s.UrlScrapperOptions.MaxDepth > maxSearchDepth {
+		s.UrlScrapperOptions.MaxDepth = maxSearchDepth
+	}
 }

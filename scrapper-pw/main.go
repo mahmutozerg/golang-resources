@@ -18,6 +18,10 @@ func main() {
 		Bwp:            browsers,
 		CreateRespFile: true,
 		CreateReqFile:  true,
+		UrlScrapperOptions: scrapper.UrlScrapperOptions{
+			FollowRedirects: false,
+			MaxDepth:        20, // max 20
+		},
 	})
 
 	if err != nil {
@@ -31,6 +35,7 @@ func main() {
 	scr.NewPage()
 	scr.GoTo("https://www.google.com")
 
+	scr.CollectUrls("https://www.youtube.com/watch?v=7fGB-hjc2Gc&t=801s")
 	log.Println("Scrapper running... Press Ctrl+C to stop.")
 
 	<-sigCh
