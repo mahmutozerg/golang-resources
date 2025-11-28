@@ -22,6 +22,7 @@ type ScrapperOptions struct {
 	Bwp            []string
 	CreateRespFile bool
 	CreateReqFile  bool
+	Headless       bool
 }
 
 type networkTraffic struct {
@@ -41,7 +42,6 @@ var allowedResources = map[string]bool{
 
 func NewScrapper(so ScrapperOptions) (*Scrapper, error) {
 
-	// Install options
 	runOption := &playwright.RunOptions{
 		SkipInstallBrowsers: len(so.Bwp) != 0,
 	}
@@ -56,7 +56,7 @@ func NewScrapper(so ScrapperOptions) (*Scrapper, error) {
 	}
 
 	launchOptions := playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(false),
+		Headless: playwright.Bool(so.Headless),
 	}
 
 	if len(so.Bwp) != 0 {
