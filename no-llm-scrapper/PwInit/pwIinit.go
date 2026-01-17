@@ -34,7 +34,7 @@ func setOptions(options CustomInstallOptions) playwright.BrowserTypeLaunchOption
 		Headless:       playwright.Bool(options.Headless),
 	}
 }
-func Init(opt CustomInstallOptions) BrowserState {
+func Init(opt CustomInstallOptions) (*BrowserState, error) {
 
 	err := installOrSkip(opt.Skip)
 	if err != nil {
@@ -47,15 +47,12 @@ func Init(opt CustomInstallOptions) BrowserState {
 	browser, err := pw.Chromium.Launch(options)
 
 	if err != nil {
-		log.Fatalf("could not launch browser: %v", err)
+		return nil, err
 	}
 
 	page, err := browser.NewPage()
 	if err != nil {
-		log.Fatalf("could not create page: %v", err)
+		return nil, err
 	}
-	return BrowserState{
-		Browser: browser,
-		Page:    page,
-	}
+	return &BrowserState{Browser: browser, Page: page}, nil
 }
