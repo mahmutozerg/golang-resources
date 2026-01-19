@@ -1,8 +1,6 @@
 package pwinit
 
 import (
-	"log"
-
 	"github.com/playwright-community/playwright-go"
 )
 
@@ -38,7 +36,7 @@ func Init(opt CustomInstallOptions) (*BrowserState, error) {
 
 	err := installOrSkip(opt.Skip)
 	if err != nil {
-		log.Fatalf("could not install playwright dependencies: %v", err)
+		return nil, err
 	}
 	pw, err := playwright.Run()
 
