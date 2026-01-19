@@ -1,6 +1,7 @@
 package main
 
 import (
+	"interface_exercise/shape"
 	"io"
 	"log"
 	"os"
@@ -10,11 +11,11 @@ import (
 
 func main() {
 
-	// s := shape.Square{SideLength: 4}
-	// t := shape.Triangle{BaseLength: 10, SideLength: 5}
+	s := shape.Square{SideLength: 4}
+	t := shape.Triangle{BaseLength: 10, SideLength: 5}
 
-	// shape.PrintArea(s)
-	// shape.PrintArea(t)
+	shape.PrintArea(s)
+	shape.PrintArea(t)
 
 	if len(os.Args) != 2 {
 		log.Fatalf("Must supplement a file name %v", len(os.Args))
