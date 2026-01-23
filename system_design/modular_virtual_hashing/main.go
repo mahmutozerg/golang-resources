@@ -8,7 +8,6 @@ import (
 	"slices"
 	"sort"
 	"strconv"
-	"time"
 )
 
 type Ring struct {
@@ -118,7 +117,6 @@ func main() {
 	}
 
 	fmt.Println("*********Remove Node_1**********")
-	start := time.Now()
 
 	r.RemoveNode("node_1")
 
