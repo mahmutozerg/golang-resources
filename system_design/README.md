@@ -1,7 +1,3 @@
-Harika, emojilerden arındırılmış, tamamen teknik yetkinliğe ve sürecin mantığına odaklanan, temiz bir `README.md` hazırladım. Bunu projenin kök dizinine ekleyebilirsin.
-
----
-
 # Dağıtık Sistemler ve Consistent Hashing Implementasyonu
 
 Bu proje, dağıtık sistemlerde veri ve yük dağıtımı için kullanılan hashing algoritmalarının Go dili ile yazılmış adım adım implementasyonunu içerir. Proje, en temel yöntemden başlayarak production seviyesindeki optimize edilmiş Consistent Hashing yapısına kadar uzanan bir evrimi modeller.
