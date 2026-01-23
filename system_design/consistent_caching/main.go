@@ -9,7 +9,7 @@ import (
 )
 
 type Ring struct {
-	sortedNodes []uint64 //Sunucularımın adlarının hash değeri sortlanmış,
+	sortedNodes []uint64
 	nodeMap     map[uint64]string
 }
 
