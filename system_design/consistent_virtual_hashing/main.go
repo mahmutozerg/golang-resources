@@ -102,6 +102,8 @@ func main() {
 		return out
 	}()
 
+	fmt.Println("1_000_000 veri dağıtılıyor")
+
 	for i := range datas {
 
 		val := r.GetNode(datas[i])
@@ -109,7 +111,7 @@ func main() {
 	}
 
 	for i := range hits {
-		fmt.Printf("%v count  %v\n", i, hits[i])
+		fmt.Printf("%v #  %v\n", i, hits[i])
 	}
 
 	for k := range hits {
@@ -119,6 +121,7 @@ func main() {
 	fmt.Println("*********Remove Node_1**********")
 
 	r.RemoveNode("node_1")
+	fmt.Println("1_000_000 veri dağıtılıyor")
 
 	for i := range datas {
 
@@ -127,7 +130,7 @@ func main() {
 	}
 
 	for i := range hits {
-		fmt.Printf("%v count  %v\n", i, hits[i])
+		fmt.Printf("%v #  %v\n", i, hits[i])
 	}
 
 }
