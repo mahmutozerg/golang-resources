@@ -40,7 +40,7 @@ func (r *Ring) AddNode(name string) {
 
 func (r *Ring) RemoveNode(name string) {
 
-	slices.DeleteFunc(r.sortedNodes, func(u uint64) bool {
+	r.sortedNodes = slices.DeleteFunc(r.sortedNodes, func(u uint64) bool {
 
 		return r.nodeMap[u] == name
 
