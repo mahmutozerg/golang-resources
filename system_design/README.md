@@ -82,6 +82,4 @@ node_4: 324,721 (+99k)
 
 Görüldüğü üzere, silinen sunucunun yükü kalan sunuculara adil bir şekilde paylaştırılmıştır.
 
-## Geliştirme Notları
 
-Bu proje, algoritmik mantığı ve veri yapılarını (Sorted Slice, Hash Map) kavramak amacıyla geliştirilmiştir. Canlı ortamda (Production) kullanılmadan önce, eşzamanlı istekleri yönetebilmek adına `sync.RWMutex` gibi mekanizmalarla Thread-Safety sağlanmalıdır.

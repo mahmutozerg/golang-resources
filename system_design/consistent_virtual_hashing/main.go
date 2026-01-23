@@ -8,11 +8,13 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"sync"
 )
 
 type Ring struct {
 	sortedNodes []uint64
 	nodeMap     map[uint64]string
+	rwmu        *sync.RWMutex
 }
 
 const VirtualSpotCount = 100
@@ -26,7 +28,8 @@ func GetHash(val string) uint64 {
 
 }
 func (r *Ring) AddNode(name string) {
-
+	r.rwmu.Lock()
+	defer r.rwmu.Unlock()
 	for i := range VirtualSpotCount {
 
 		uintval := GetHash(fmt.Sprintf("%s#%d", name, i))
@@ -40,6 +43,8 @@ func (r *Ring) AddNode(name string) {
 
 func (r *Ring) RemoveNode(name string) {
 
+	r.rwmu.Lock()
+	defer r.rwmu.Unlock()
 	r.sortedNodes = slices.DeleteFunc(r.sortedNodes, func(u uint64) bool {
 
 		return r.nodeMap[u] == name
@@ -57,21 +62,11 @@ func (r *Ring) RemoveNode(name string) {
 }
 func (r Ring) GetNode(val string) string {
 
+	r.rwmu.RLock()
+	defer r.rwmu.RUnlock()
+
 	uintval := GetHash(val)
-
 	index := sort.Search(len(r.sortedNodes), func(i int) bool { return r.sortedNodes[i] >= uintval })
-
-	if index >= len(r.sortedNodes) {
-		return r.nodeMap[r.sortedNodes[uint64(0)]]
-	}
-
-	return r.nodeMap[r.sortedNodes[uint64(index)]]
-
-}
-
-func (r Ring) GetNodeByHash(val uint64) string {
-
-	index := sort.Search(len(r.sortedNodes), func(i int) bool { return r.sortedNodes[i] >= val })
 
 	if index >= len(r.sortedNodes) {
 		return r.nodeMap[r.sortedNodes[uint64(0)]]
@@ -85,7 +80,7 @@ func main() {
 
 	r := Ring{}
 	r.nodeMap = make(map[uint64]string)
-
+	r.rwmu = &sync.RWMutex{}
 	var hits = make(map[string]int)
 
 	r.AddNode("node_1")
