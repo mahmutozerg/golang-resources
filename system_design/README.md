@@ -1,18 +1,21 @@
-# Dağıtık Sistemler ve Consistent Hashing Implementasyonu
+# Go ile Dağıtık Sistemler: Consistent Hashing ve Key-Value Store Implementasyonu
 
-Bu proje, dağıtık sistemlerde veri ve yük dağıtımı için kullanılan hashing algoritmalarının Go dili ile yazılmış adım adım implementasyonunu içerir. Proje, en temel yöntemden başlayarak production seviyesindeki optimize edilmiş Consistent Hashing yapısına kadar uzanan bir evrimi modeller.
+Bu proje, dağıtık sistemlerde veri ve yük dağıtımı için kullanılan hashing algoritmalarının ve veri saklama stratejilerinin Go dili ile yazılmış adım adım implementasyonunu içerir.
 
-Amaç sadece çalışan bir kod yazmak değil, her aşamada karşılaşılan mühendislik problemlerini (veri dağılımı dengesizliği, yeniden ölçekleme maliyeti, performans darboğazları) analiz edip bir sonraki aşamada bunları çözmektir.
+Proje, temel bir modülo yaklaşımından başlayıp, **Replication (Yedekleme)** ve **Concurrency (Eşzamanlılık)** özelliklerine sahip, production standartlarına yakın bir **Distributed Key-Value Store** çekirdeğine doğru evrilen bir süreci modeller.
+
+Amaç sadece çalışan kod yazmak değil; "Cache Miss Storm", "Data Hotspots" ve "Single Point of Failure" gibi mühendislik problemlerini analiz edip her aşamada çözmektir.
 
 ## Proje Yapısı
 
-Proje, algoritmaların gelişim sırasına göre üç ana modülden oluşur:
+Proje, algoritmaların gelişim sırasına göre dört ana modülden oluşur:
 
 ```text
 system_design
-├── modular_hashing          # V1: Klasik Modülo Yöntemi
-├── consistent_caching       # V2: Temel Halka (Ring) Yapısı
-└── modular_virtual_hashing  # V3: Sanal Düğümler ve O(N) Optimizasyonu
+├── modular_hashing             # V1: Klasik Modülo Yöntemi
+├── consistent_hashing          # V2: Temel Halka (Ring) Yapısı
+├── consistent_virtual_hashing  # V3: Sanal Düğümler ve Yük Dengeleme
+└── consistent_virtual_hashing_replicated    # V4: Replikasyon, Thread-Safety ve KV Store
 
 ```
 
@@ -22,64 +25,60 @@ system_design
 
 Yük dağıtımı için kullanılan en ilkel yöntemdir. `hash(key) % sunucu_sayısı` formülü ile çalışır.
 
-* **Problem:** Sistemdeki sunucu sayısı değiştiğinde (scaling), var olan anahtarların neredeyse tamamının yeri değişir. Bu durum, cache kullanan sistemlerde "Cache Miss Storm" felaketine yol açar.
+* **Problem:** Sistemdeki sunucu sayısı değiştiğinde (scaling), var olan anahtarların neredeyse tamamının yeri değişir. Bu durum "Cache Miss Storm" felaketine yol açar.
 * **Sonuç:** Ölçeklenebilir sistemler için uygun değildir.
 
-### 2. consistent_caching (Halka Topolojisi)
+### 2. consistent_hashing (Halka Topolojisi)
 
-Consistent Hashing algoritmasının temel implementasyonudur. Sunucular ve veriler `0` ile `2^64` arasındaki bir sayı doğrusuna (halka) yerleştirilir. Veri, saat yönünde kendisine en yakın olan sunucuya atanır.
+Consistent Hashing algoritmasının temel implementasyonudur. Sunucular ve veriler bir sayı doğrusuna (halka) yerleştirilir. Veri, saat yönünde kendisine en yakın sunucuya atanır.
 
-* **İyileştirme:** Bir sunucu eklendiğinde veya çıkarıldığında sadece komşu düğümler etkilenir. Veri taşıma maliyeti minimize edilir.
-* **Yeni Problem:** Veri dağılımı homojen değildir. Bazı sunuculara çok az, bazılarına aşırı yük binebilir (Data Hotspots).
+* **İyileştirme:** Sunucu eklendiğinde/çıkarıldığında sadece komşu düğümler etkilenir. Veri taşıma maliyeti minimize edilir.
+* **Yeni Problem:** Veri dağılımı homojen değildir (Data Hotspots).
 
-### 3. modular_virtual_hashing (Final Çözüm)
+### 3. consistent_virtual_hashing (Sanal Düğümler & O(N) Optimizasyonu)
 
-Dağılım dengesizliğini çözmek için **Virtual Nodes (Sanal Düğümler)** tekniğinin uygulandığı ve performans optimizasyonu yapılmış son versiyondur.
+Dağılım dengesizliğini çözmek için **Virtual Nodes** tekniği uygulanmıştır. Her fiziksel sunucu halkada yüzlerce sanal kopya ile temsil edilir.
+
+* **Teknik:** Go 1.21 `slices` paketi ile "Single-Pass Filtering" yapılarak node silme işlemi optimize edilmiştir.
+* **Sonuç:** Mükemmele yakın yük dağılımı (%1 varyasyon).
+
+
+### 4. consistent_virtual_hashing_replicated (Final: Replikasyon & Thread Safety)
+
+Bu modül, dağıtık bir Key-Value Store'un **"Veri Yerleşimi ve Yönlendirme" (Data Placement & Routing)** katmanını simüle eder. Henüz verinin kendisini diske yazmaz, ancak verinin hangi sunucularda yedekleneceğinin matematiğini çözer.
 
 #### Teknik Özellikler:
 
-* **Virtual Nodes:** Her fiziksel sunucu için halka üzerine belirli sayıda (örneğin 100) sanal kopya yerleştirilir. Bu sayede sunucular halkaya homojen bir şekilde dağılır ve yük dengesi matematiksel olarak sağlanır.
-* **Adil Yük Dağılımı:** Bir sunucu sistemden çıkarıldığında, üzerindeki yük tek bir sunucuya binmez; diğer sunuculara eşit oranda paylaştırılır.
-
-#### Performans Optimizasyonu (Go 1.21+):
-
-Önceki versiyonlarda sunucu silme işlemi (`RemoveNode`), her sanal kopya için tekrar tekrar hash hesaplaması ve array kaydırma işlemi gerektiriyordu. Bu durum büyük ölçekte CPU ve RAM darboğazı yaratıyordu.
-
-Bu versiyonda **Single-Pass Filtering** tekniği kullanılmıştır:
-
-* Dizi üzerinde sadece tek bir geçiş yapılır.
-* Pahalı hash hesaplamaları yerine `Map Lookup` (O(1)) kullanılır.
-* `slices.DeleteFunc` kullanılarak silinecek elemanlar "in-place" (yerinde) filtrelenir.
-* Bu sayede karmaşıklık `O(M * N)` seviyesinden `O(N)` seviyesine indirilmiştir.
+* **Replication Strategy (N=3):** Veri tek bir sunucuda değil, belirlenen `N` sayısı kadar sunucuda yedeklenir. Bir sunucu ölse bile veri kaybolmaz.
+* **Distinct Physical Node Selection:** Algoritma, yedekleri seçerken sanal node'ları atlayıp **birbirinden farklı fiziksel sunucuları** bulur. (Örn: A sunucusuna veriyi yazdıysa, yedeği tekrar A'nın sanal node'una yazmaz).
+* **Concurrency Control:** `sync.RWMutex` kullanılarak yapı **Thread-Safe** hale getirilmiştir. Yüksek trafik altında `Fatal Error: Concurrent map write` hataları engellenmiştir.
+* **Ring Wrap-Around:** Halkanın sonuna gelindiğinde başa dönerek aramanın devam etmesini sağlayan matematiksel döngü (`modulo arithmetic`) kurulmuştur.
 
 ## Nasıl Çalıştırılır?
 
 Test etmek istediğiniz modülün dizinine gidip `go run` komutunu kullanabilirsiniz.
 
 ```bash
-cd modular_virtual_hashing
+cd consistent_virtual_hashing_replicated
 go run main.go
 
 ```
 
-### Örnek Test Sonucu
+### Örnek Test Sonucu (V4 - Replication)
 
-1 milyon isteğin 4 sunucuya dağıtılması ve bir sunucunun (`node_1`) sistemden çıkarılması durumunda yükün nasıl yeniden dağıtıldığı aşağıdaki gibidir:
+1 milyon verinin 3 kopya (Replica=3) ile 4 sunucuya dağıtıldığı ve `node_1`'in sistemden ani düşüşünün simüle edildiği senaryo:
 
 ```text
---- Başlangıç Dağılımı ---
-node_1: 242,551 (%24.2)
-node_2: 310,862 (%31.0)
-node_3: 220,996 (%22.0)
-node_4: 225,591 (%22.5)
+--- Başlangıç Dağılımı (1.000.000 Veri x 3 Kopya) ---
+node_2: 760,436
+node_1: 747,766
+node_3: 751,179
+node_4: 740,619
+# Not: Dağılım son derece dengeli.
 
---- node_1 Silindikten Sonra (Yeniden Dağılım) ---
-node_2: 376,598 (+66k)
-node_3: 298,681 (+78k)
-node_4: 324,721 (+99k)
+--- NODE_1 SİLİNDİKTEN SONRA (Failover) ---
+node_2: 1,000,000 (%100)
+node_3: 1,000,000 (%100)
+node_4: 1,000,000 (%100)
 
 ```
-
-Görüldüğü üzere, silinen sunucunun yükü kalan sunuculara adil bir şekilde paylaştırılmıştır.
-
-
