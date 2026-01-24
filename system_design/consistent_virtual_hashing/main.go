@@ -7,7 +7,6 @@ import (
 	"maps"
 	"slices"
 	"sort"
-	"strconv"
 	"sync"
 )
 
@@ -91,8 +90,9 @@ func main() {
 	datas := func() []string {
 
 		out := make([]string, 0, 1_000_000)
-		for i := 0; i < 1_000_000; i++ {
-			out = append(out, "data_"+strconv.FormatInt(int64(i), 10))
+		for i := range 1_000_000 {
+
+			out = append(out, fmt.Sprintf("data_%d", i))
 		}
 		return out
 	}()
