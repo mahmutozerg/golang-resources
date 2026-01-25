@@ -118,10 +118,10 @@ func (r *Ring) getNode(val string, n int) []string {
 
 	for i, ct, steps := ((index) % len(r.sortedNodes)), 0, 0; steps < len(r.sortedNodes) && ct < n; i, steps = (i+1)%len(r.sortedNodes), steps+1 {
 
-		if seenSet[r.nodeMap[r.sortedNodes[uint64(i)]]] != true {
+		if seenSet[r.nodeMap[r.sortedNodes[i]]] != true {
 
-			seenSet[r.nodeMap[r.sortedNodes[uint64(i)]]] = true
-			nodes = append(nodes, r.nodeMap[r.sortedNodes[uint64(i)]])
+			seenSet[r.nodeMap[r.sortedNodes[i]]] = true
+			nodes = append(nodes, r.nodeMap[r.sortedNodes[i]])
 			ct += 1
 		}
 	}
