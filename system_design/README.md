@@ -1,21 +1,25 @@
-# Go ile Dağıtık Sistemler: Consistent Hashing ve Key-Value Store Implementasyonu
 
-Bu proje, dağıtık sistemlerde veri ve yük dağıtımı için kullanılan hashing algoritmalarının ve veri saklama stratejilerinin Go dili ile yazılmış adım adım implementasyonunu içerir.
+# Go ile Dağıtık Sistemler: Consistent Hashing ve Toy DynamoDB
 
-Proje, temel bir modülo yaklaşımından başlayıp, **Replication (Yedekleme)** ve **Concurrency (Eşzamanlılık)** özelliklerine sahip, production standartlarına yakın bir **Distributed Key-Value Store** çekirdeğine doğru evrilen bir süreci modeller.
+Bu proje, dağıtık sistemlerde veri dağıtımı, yük dengeleme ve veri saklama stratejilerinin Go dili ile sıfırdan inşasını içerir.
 
-Amaç sadece çalışan kod yazmak değil; "Cache Miss Storm", "Data Hotspots" ve "Single Point of Failure" gibi mühendislik problemlerini analiz edip her aşamada çözmektir.
+Proje, basit bir modülo hashing mantığından başlayıp; **Replication**, **Sharding**, **Thread-Safety** ve **Coordinator** desenlerini kullanan, üretim standartlarına yakın bir **Distributed Key-Value Store** (Toy DynamoDB) mimarisine evrilen süreci modeller.
+
+Amaç sadece kod yazmak değil; "Race Condition", "Deadlock", "TOCTOU" ve "Data Hotspots" gibi mühendislik problemlerini yerinde tespit edip çözmektir.
 
 ## Proje Yapısı
 
-Proje, algoritmaların gelişim sırasına göre dört ana modülden oluşur:
+Proje, mimari evrimin her aşamasını temsil eden modüllerden oluşur:
 
 ```text
-system_design
-├── modular_hashing             # V1: Klasik Modülo Yöntemi
-├── consistent_hashing          # V2: Temel Halka (Ring) Yapısı
-├── consistent_virtual_hashing  # V3: Sanal Düğümler ve Yük Dengeleme
-└── consistent_virtual_hashing_replicated    # V4: Replikasyon, Thread-Safety ve KV Store
+.
+├── consistent_hashing                  # V2: Temel Halka (Ring) Yapısı
+├── consistent_virtual_hashing          # V3: Sanal Düğümler (Virtual Nodes)
+├── consistent_virtual_hashing_replicated # V4: Replikasyon Mantığı (Simulation)
+├── modular_hashing                     # V1: Klasik Modülo Yöntemi
+└── toy_dynamodb                        # V5: Storage Engine, Coordinator & KV Store
+    ├── node                            # Fiziksel Depolama Birimi (Storage Engine)
+    └── ring                            # Yönlendirme ve Orkestrasyon (Coordinator)
 
 ```
 
@@ -23,62 +27,90 @@ system_design
 
 ### 1. modular_hashing (Klasik Yaklaşım)
 
-Yük dağıtımı için kullanılan en ilkel yöntemdir. `hash(key) % sunucu_sayısı` formülü ile çalışır.
-
-* **Problem:** Sistemdeki sunucu sayısı değiştiğinde (scaling), var olan anahtarların neredeyse tamamının yeri değişir. Bu durum "Cache Miss Storm" felaketine yol açar.
-* **Sonuç:** Ölçeklenebilir sistemler için uygun değildir.
+`hash(key) % sunucu_sayısı` formülü. Sunucu sayısı değişince %100'e yakın "Cache Miss" yaşanır. Ölçeklenebilir değildir.
 
 ### 2. consistent_hashing (Halka Topolojisi)
 
-Consistent Hashing algoritmasının temel implementasyonudur. Sunucular ve veriler bir sayı doğrusuna (halka) yerleştirilir. Veri, saat yönünde kendisine en yakın sunucuya atanır.
+Sunucular bir çembere yerleştirilir. Node ekleme/çıkarma maliyeti minimize edilir ancak veri dağılımı dengesizdir.
 
-* **İyileştirme:** Sunucu eklendiğinde/çıkarıldığında sadece komşu düğümler etkilenir. Veri taşıma maliyeti minimize edilir.
-* **Yeni Problem:** Veri dağılımı homojen değildir (Data Hotspots).
+### 3. consistent_virtual_hashing (O(N) Optimizasyonu)
 
-### 3. consistent_virtual_hashing (Sanal Düğümler & O(N) Optimizasyonu)
+Her fiziksel sunucu yüzlerce "Sanal Node" ile temsil edilir. Yük dağılımı mükemmel dengeye (%1 varyasyon) ulaşır.
 
-Dağılım dengesizliğini çözmek için **Virtual Nodes** tekniği uygulanmıştır. Her fiziksel sunucu halkada yüzlerce sanal kopya ile temsil edilir.
+### 4. consistent_virtual_hashing_replicated (Replikasyon Mantığı)
 
-* **Teknik:** Go 1.21 `slices` paketi ile "Single-Pass Filtering" yapılarak node silme işlemi optimize edilmiştir.
-* **Sonuç:** Mükemmele yakın yük dağılımı (%1 varyasyon).
+Verinin `N=3` kopyasının mantıksal olarak hangi node'lara gideceğini hesaplar. Ancak veriyi fiziksel olarak saklamaz, sadece routing simülasyonudur.
+
+---
+
+### 5. toy_dynamodb (V5 - Storage Engine & Coordinator)
+
+Bu modül, projenin **"InMemory Distributed Database"** haline gelmiş sürümüdür. Artık sadece adres hesaplanmaz, veri gerçekten saklanır ve okunur.
+
+#### Mimari Özellikler:
+
+* **Package Separation & Encapsulation:**
+* **`ring` Paketi (Coordinator):** Sistemin beynidir. İstemciden gelen isteği karşılar, verinin hangi node'lara (ve replikalara) gideceğini hesaplar ve trafiği yönetir.
+* **`node` Paketi (Storage):** Sistemin kasasıdır. Sadece kendisine verilen veriyi saklar. Verinin nereden geldiğini veya başka kopyaları olup olmadığını bilmez.
 
 
-### 4. consistent_virtual_hashing_replicated (Final: Replikasyon & Thread Safety)
+* **Concurrency & Thread-Safety:**
+* **Granular Locking:** `Ring` yapısı topoloji değişiklikleri (Node ekleme) için kendi `RWMutex`ini, her bir `Node` ise veri yazma/okuma işlemleri için kendi özel `RWMutex`ini kullanır. Bu sayede sistem kilitlenmeden (Deadlock-free) çalışır.
+* **TOCTOU (Time-of-Check to Time-of-Use) Koruması:** Node ekleme sırasında oluşabilecek yarış durumları (Race Conditions), "Double-Check Locking" deseni ile engellenmiştir.
 
-Bu modül, dağıtık bir Key-Value Store'un **"Veri Yerleşimi ve Yönlendirme" (Data Placement & Routing)** katmanını simüle eder. Henüz verinin kendisini diske yazmaz, ancak verinin hangi sunucularda yedekleneceğinin matematiğini çözer.
 
-#### Teknik Özellikler:
+* **Dynamic Replication:**
+* `RCount` (Replication Count) parametresi dinamik hale getirilmiştir. Sistem başlatılırken verinin kaç kopyasının tutulacağı (N) belirlenebilir.
+* `Put` ve `Get` işlemleri, belirlenen replikasyon faktörü (N) kadar sunucuyu gezerek veri tutarlılığını sağlar.
 
-* **Replication Strategy (N=3):** Veri tek bir sunucuda değil, belirlenen `N` sayısı kadar sunucuda yedeklenir. Bir sunucu ölse bile veri kaybolmaz.
-* **Distinct Physical Node Selection:** Algoritma, yedekleri seçerken sanal node'ları atlayıp **birbirinden farklı fiziksel sunucuları** bulur. (Örn: A sunucusuna veriyi yazdıysa, yedeği tekrar A'nın sanal node'una yazmaz).
-* **Concurrency Control:** `sync.RWMutex` kullanılarak yapı **Thread-Safe** hale getirilmiştir. Yüksek trafik altında `Fatal Error: Concurrent map write` hataları engellenmiştir.
-* **Ring Wrap-Around:** Halkanın sonuna gelindiğinde başa dönerek aramanın devam etmesini sağlayan matematiksel döngü (`modulo arithmetic`) kurulmuştur.
+
 
 ## Nasıl Çalıştırılır?
 
-Test etmek istediğiniz modülün dizinine gidip `go run` komutunu kullanabilirsiniz.
+En güncel Distributed KV Store versiyonunu çalıştırmak için:
 
 ```bash
-cd consistent_virtual_hashing_replicated
+cd toy_dynamodb
 go run main.go
+```
+
+### Örnek Kullanım (V5)
+
+Aşağıdaki örnekte 6 sunuculu bir küme oluşturulmuş ve replikasyon sayısı (`RCount`) 5 olarak ayarlanmıştır.
+
+```go
+func main() {
+    // Ring başlatılır ve Replikasyon Sayısı 5 olarak ayarlanır
+    ring := Ring.Ring{RCount: 5}
+    ring.Init()
+
+    // Node'lar güvenli bir şekilde eklenir
+    nodes := []string{"foo", "bar", "bazz", "zapp", "zucc", "bars"}
+    for _, n := range nodes {
+        if err := ring.AddNode(n); err != nil {
+            log.Fatalf("%v", err)
+        }
+    }
+
+    // Veri yazma (Coordinator 5 replikaya da yazar)
+    ring.Put("Mahmut", "Ozer")
+
+    // Veri okuma (Coordinator replikalardan veriyi çeker)
+    vals, found := ring.Get("Mahmut")
+    
+    if found {
+        fmt.Println(vals) 
+    }
+}
 
 ```
 
-### Örnek Test Sonucu (V4 - Replication)
-
-1 milyon verinin 3 kopya (Replica=3) ile 4 sunucuya dağıtıldığı ve `node_1`'in sistemden ani düşüşünün simüle edildiği senaryo:
+**Beklenen Çıktı:**
 
 ```text
---- Başlangıç Dağılımı (1.000.000 Veri x 3 Kopya) ---
-node_2: 760,436
-node_1: 747,766
-node_3: 751,179
-node_4: 740,619
-# Not: Dağılım son derece dengeli.
-
---- NODE_1 SİLİNDİKTEN SONRA (Failover) ---
-node_2: 1,000,000 (%100)
-node_3: 1,000,000 (%100)
-node_4: 1,000,000 (%100)
-
+[Ozer Ozer Ozer Ozer Ozer]
 ```
+
+*(Verinin 5 farklı fiziksel sunucuda başarıyla saklandığını ve okunduğunu gösterir.)*
+
+

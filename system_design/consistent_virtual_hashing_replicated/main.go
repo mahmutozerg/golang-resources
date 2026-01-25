@@ -59,7 +59,7 @@ func (r *Ring) RemoveNode(name string) {
 	slices.Sort(r.sortedNodes)
 
 }
-func (r Ring) GetNode(val string, n int) []string {
+func (r *Ring) GetNode(val string, n int) []string {
 
 	r.rwmu.RLock()
 	defer r.rwmu.RUnlock()
