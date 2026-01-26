@@ -43,14 +43,3 @@ Chosen option: **"gRPC with Docker Compose"**, because
 
 ---
 
-### 🗺️ V8 Yol Haritası (Docker & gRPC)
-
-Bu kararı aldıysak, V8 için teknik yapılacaklar listemiz (TODO) şöyle şekillenecek:
-
-1. **Contract (Sözleşme):** `kv.proto` dosyasını oluşturacağız.
-* `service KVStore { rpc Put... rpc Get... }`
-
-
-2. **Server (Node):** `node` paketini, 50051 portunu dinleyen bir `main` uygulamasına (`cmd/server/main.go`) çevireceğiz.
-3. **Client (Ring):** `ring` paketindeki `node.Put()` çağrılarını `grpcClient.Put()` ile değiştireceğiz.
-4. **Infrastructure:** 3-5 tane node ve 1 tane client ayağa kaldıran bir `docker-compose.yaml` yazacağız.
