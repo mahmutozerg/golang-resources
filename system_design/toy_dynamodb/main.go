@@ -22,7 +22,7 @@ func main() {
 	ring.Put("Mahmut", "Ozer", 3)
 
 	// Veri okuma (Coordinator replikalardan veriyi çeker)
-	vals, err := ring.Get("Mahmut", 3)
+	vals, err := ring.Get("Mahmut", 1)
 
 	if err == nil {
 		fmt.Println(vals)
