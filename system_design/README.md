@@ -3,9 +3,9 @@
 
 Bu proje, dağıtık sistemlerde veri dağıtımı, yük dengeleme ve veri saklama stratejilerinin Go dili ile sıfırdan inşasını içerir.
 
-Proje, basit bir modülo hashing mantığından başlayıp; **Replication**, **Sharding**, **Thread-Safety** ve **Coordinator** desenlerini kullanan, üretim standartlarına yakın bir **Distributed Key-Value Store** (Toy DynamoDB) mimarisine evrilen süreci modeller.
+Proje, basit bir modülo hashing mantığından başlayıp; **Replication**, **Sharding**, **Thread-Safety**, **Coordinator** ve **Quorum Consensus** desenlerini kullanan, üretim standartlarına yakın bir **Distributed Key-Value Store** (Toy DynamoDB) mimarisine evrilen süreci modeller.
 
-Amaç sadece kod yazmak değil; "Race Condition", "Deadlock", "TOCTOU" ve "Data Hotspots" gibi mühendislik problemlerini yerinde tespit edip çözmektir.
+Amaç sadece kod yazmak değil; "Race Condition", "Deadlock", "Goroutine Leak" ve "Data Hotspots" gibi mühendislik problemlerini yerinde tespit edip çözmektir.
 
 ## Proje Yapısı
 
@@ -17,7 +17,7 @@ Proje, mimari evrimin her aşamasını temsil eden modüllerden oluşur:
 ├── consistent_virtual_hashing          # V3: Sanal Düğümler (Virtual Nodes)
 ├── consistent_virtual_hashing_replicated # V4: Replikasyon Mantığı (Simulation)
 ├── modular_hashing                     # V1: Klasik Modülo Yöntemi
-└── toy_dynamodb                        # V5: Storage Engine, Coordinator & KV Store
+└── toy_dynamodb                        # V6: Quorum, Concurrency & Storage Engine
     ├── node                            # Fiziksel Depolama Birimi (Storage Engine)
     └── ring                            # Yönlendirme ve Orkestrasyon (Coordinator)
 
@@ -43,25 +43,30 @@ Verinin `N=3` kopyasının mantıksal olarak hangi node'lara gideceğini hesapla
 
 ---
 
-### 5. toy_dynamodb (V5 - Storage Engine & Coordinator)
+### 5. toy_dynamodb (V6 - Quorum Consensus & Concurrency)
 
-Bu modül, projenin **"InMemory Distributed Database"** haline gelmiş sürümüdür. Artık sadece adres hesaplanmaz, veri gerçekten saklanır ve okunur.
+Bu modül, projenin **"Concurrent Distributed Database"** haline gelmiş sürümüdür. Veri tutarlılığı ve erişilebilirlik, istemci tarafından ayarlanabilir.
 
 #### Mimari Özellikler:
 
-* **Package Separation & Encapsulation:**
-* **`ring` Paketi (Coordinator):** Sistemin beynidir. İstemciden gelen isteği karşılar, verinin hangi node'lara (ve replikalara) gideceğini hesaplar ve trafiği yönetir.
-* **`node` Paketi (Storage):** Sistemin kasasıdır. Sadece kendisine verilen veriyi saklar. Verinin nereden geldiğini veya başka kopyaları olup olmadığını bilmez.
+* **Tunable Consistency (Ayarlanabilir Tutarlılık):**
+    * **N (Replication Count):** Verinin toplam kaç kopyası olacağı.
+    * **W (Write Quorum):** Yazma işleminin başarılı sayılması için gereken minimum onay sayısı.
+    * **R (Read Quorum):** Okuma işleminin başarılı sayılması için gereken minimum cevap sayısı.
+    * Kullanıcı `Put(k, v, w)` ve `Get(k, r)` çağrılarıyla **Hız vs. Tutarlılık** dengesini kendi yönetir.
 
 
-* **Concurrency & Thread-Safety:**
-* **Granular Locking:** `Ring` yapısı topoloji değişiklikleri (Node ekleme) için kendi `RWMutex`ini, her bir `Node` ise veri yazma/okuma işlemleri için kendi özel `RWMutex`ini kullanır. Bu sayede sistem kilitlenmeden (Deadlock-free) çalışır.
-* **TOCTOU (Time-of-Check to Time-of-Use) Koruması:** Node ekleme sırasında oluşabilecek yarış durumları (Race Conditions), "Double-Check Locking" deseni ile engellenmiştir.
+* **Concurrent Execution (Fan-Out / Fan-In):**
+    * V5'teki sıralı (sequential) döngüler terk edilmiştir.
+    * İstek anında `N` adet Goroutine paralel olarak ateşlenir ("Fan-Out").
+    * Sonuçlar `Buffered Channel` üzerinden toplanır ("Fan-In").
+    * **Latency Hiding:** Sistem en yavaş sunucuyu beklemez. İstenen `W` veya `R` sayısına ulaşıldığı an ("Early Exit") cevap dönülür.
 
 
-* **Dynamic Replication:**
-* `RCount` (Replication Count) parametresi dinamik hale getirilmiştir. Sistem başlatılırken verinin kaç kopyasının tutulacağı (N) belirlenebilir.
-* `Put` ve `Get` işlemleri, belirlenen replikasyon faktörü (N) kadar sunucuyu gezerek veri tutarlılığını sağlar.
+* **Thread-Safety & Deadlock Prevention:**
+    * **Granular Locking:** `Ring` ve `Node` yapıları kendi `RWMutex`lerini yönetir.
+    * **Channel Management:** Goroutine sızıntısını (Leak) önlemek için kanallar `N` kapasiteli (Fire-and-Forget) tasarlanmıştır.
+    * **Double-Check Locking:** TOCTOU hatalarını önlemek için node ekleme sırasında çift kontrol mekanizması uygulanır.
 
 
 
@@ -74,14 +79,14 @@ cd toy_dynamodb
 go run main.go
 ```
 
-### Örnek Kullanım (V5)
+### Örnek Kullanım (V6)
 
-Aşağıdaki örnekte 6 sunuculu bir küme oluşturulmuş ve replikasyon sayısı (`RCount`) 5 olarak ayarlanmıştır.
+Aşağıdaki örnekte 6 sunuculu bir küme oluşturulmuş, Replikasyon (N) 5 olarak ayarlanmış, ancak Yazma (W) ve Okuma (R) için 3 onay yeterli görülmüştür.
 
 ```go
 func main() {
-    // Ring başlatılır ve Replikasyon Sayısı 5 olarak ayarlanır
-    ring := Ring.Ring{RCount: 5}
+    // Ring başlatılır ve Replikasyon Sayısı (N) 5 olarak ayarlanır
+    ring := Ring.Ring{ReplicaCount: 5}
     ring.Init()
 
     // Node'lar güvenli bir şekilde eklenir
@@ -92,25 +97,25 @@ func main() {
         }
     }
 
-    // Veri yazma (Coordinator 5 replikaya da yazar)
-    ring.Put("Mahmut", "Ozer")
+    // W=3 (En az 3 sunucu "Yazdım" desin, gerisini bekleme)
+    err := ring.Put("Mahmut", "Ozer", 3)
+    if err != nil {
+         log.Fatalf("Write failed: %v", err)
+    }
 
-    // Veri okuma (Coordinator replikalardan veriyi çeker)
-    vals, found := ring.Get("Mahmut")
-    
-    if found {
-        fmt.Println(vals) 
+    // R=3 (En az 3 sunucudan veri getir)
+    vals, err := ring.Get("Mahmut", 3)
+
+    if err == nil {
+        fmt.Println(vals)
+    } else {
+        log.Fatalf("Read failed: %v", err)
     }
 }
-
 ```
-
 **Beklenen Çıktı:**
-
 ```text
-[Ozer Ozer Ozer Ozer Ozer]
+map[bar:Ozer bazz:Ozer foo:Ozer]
 ```
 
-*(Verinin 5 farklı fiziksel sunucuda başarıyla saklandığını ve okunduğunu gösterir.)*
-
-
+*(Not: Çıktı bir Map olduğu için sıralama değişebilir ve Quorum sağlandığı an dönüldüğü için sadece en hızlı 3 sunucunun cevabını içerir.)*

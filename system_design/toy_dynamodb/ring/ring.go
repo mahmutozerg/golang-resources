@@ -11,6 +11,12 @@ import (
 	node "toy_dynamodb/node"
 )
 
+type getResponse struct {
+	nodeName string
+	value    string
+	ok       bool
+}
+
 const VirtualSpotCount = 100
 
 type argError struct {
@@ -18,21 +24,42 @@ type argError struct {
 	message string
 }
 
+type quorumWriteError struct {
+	message string
+	w       int
+	n       int
+}
+type quorumReadError struct {
+	message string
+	r       int
+	n       int
+}
+
+func (e *quorumWriteError) Error() string {
+	return fmt.Sprintf("%s ", e.message)
+}
+
+func (e *quorumReadError) Error() string {
+	return fmt.Sprintf("%s ", e.message)
+}
 func (e *argError) Error() string {
 	return fmt.Sprintf("%s - %s", e.arg, e.message)
 }
 
 type Ring struct {
-	nodes       map[string]*node.Node
-	sortedNodes []uint64
-	nodeMap     map[uint64]string
-	rwmu        *sync.RWMutex
-	RCount      uint
+	nodes        map[string]*node.Node
+	sortedNodes  []uint64
+	nodeMap      map[uint64]string
+	rwmu         *sync.RWMutex
+	ReplicaCount uint
 }
 
 func (r *Ring) AddNode(name string) error {
 
 	r.rwmu.RLock()
+	if r.nodes == nil {
+		return &argError{fmt.Sprint(r.nodes), "Is Not initilized"}
+	}
 	_, exist := r.nodes[name]
 
 	if exist {
@@ -69,34 +96,97 @@ func (r *Ring) AddNode(name string) error {
 
 }
 
-func (r *Ring) Put(key, val string) {
+func (r *Ring) Put(key, val string, w int) error {
 
-	getNodes := r.getNode(key, int(r.RCount))
+	if len(r.nodes) < w {
+		return &argError{fmt.Sprintf("%v count is %d", r.nodes, len(r.nodes)), "Write Quorum Count can't be greater than node counts"}
+	}
+
+	getNodes := r.getNode(key, int(r.ReplicaCount))
+
+	if len(getNodes) == 0 {
+		return &argError{fmt.Sprint(getNodes), " returned count 0"}
+	}
+
+	ch := make(chan error, len(getNodes))
 
 	for _, name := range getNodes {
 
-		r.nodes[name].Put(key, val)
+		go func(n string) {
+			// for golang 1.25.6 loop variables are passed by ref not by value
+			// but for good sake i'll stuck to old version
+			err := r.nodes[n].Put(key, val)
+
+			if err != nil {
+				ch <- err
+			} else {
+				ch <- nil
+			}
+
+		}(name)
 	}
 
+	for s, f := 0, 0; ; {
+		err := <-ch
+
+		if err == nil {
+			s++
+		} else {
+			f++
+		}
+
+		if s == w {
+			return nil
+		} else if s+f == len(getNodes) {
+			return &quorumWriteError{message: "Failed to hit quorum", w: w, n: len(getNodes)}
+		}
+	}
 }
 
-func (r *Ring) Get(key string) ([]string, bool) {
+func (r *Ring) Get(key string, q int) (map[string]string, error) {
 
-	getNodes := r.getNode(key, int(r.RCount))
+	if len(r.nodes) < q {
+		return nil, &argError{fmt.Sprintf("%v count is %d", r.nodes, len(r.nodes)), "Write Quorum Count can't be greater than node counts"}
+	}
 
-	vals := []string{}
+	getNodes := r.getNode(key, int(r.ReplicaCount))
+
+	if len(getNodes) == 0 {
+		return nil, &argError{fmt.Sprint(getNodes), " returned count 0"}
+	}
+	ch := make(chan getResponse, len(getNodes))
+
+	vals := make(map[string]string)
 
 	for _, name := range getNodes {
 
-		v, ok := r.nodes[name].Get(key)
-
-		if !ok {
-			continue
-		}
-		vals = append(vals, v)
+		go func(n string) {
+			v, ok := r.nodes[n].Get(key)
+			ch <- getResponse{
+				nodeName: n,
+				value:    v,
+				ok:       ok,
+			}
+		}(name)
 	}
 
-	return vals, len(vals) > 0
+	for s, f := 0, 0; ; {
+		res := <-ch
+
+		if res.ok {
+			vals[res.nodeName] = res.value
+			s++
+		} else {
+			f++
+		}
+
+		if s == q {
+			return vals, nil
+		} else if s+f == len(getNodes) {
+			return nil, &quorumReadError{message: "Failed to hit quorum", r: q, n: len(getNodes)}
+		}
+	}
+
 }
 
 func (r *Ring) Init() {
@@ -118,10 +208,10 @@ func (r *Ring) getNode(val string, n int) []string {
 
 	for i, ct, steps := ((index) % len(r.sortedNodes)), 0, 0; steps < len(r.sortedNodes) && ct < n; i, steps = (i+1)%len(r.sortedNodes), steps+1 {
 
-		if seenSet[r.nodeMap[r.sortedNodes[i]]] != true {
+		if seenSet[r.nodeMap[r.sortedNodes[uint64(i)]]] != true {
 
-			seenSet[r.nodeMap[r.sortedNodes[i]]] = true
-			nodes = append(nodes, r.nodeMap[r.sortedNodes[i]])
+			seenSet[r.nodeMap[r.sortedNodes[uint64(i)]]] = true
+			nodes = append(nodes, r.nodeMap[r.sortedNodes[uint64(i)]])
 			ct += 1
 		}
 	}

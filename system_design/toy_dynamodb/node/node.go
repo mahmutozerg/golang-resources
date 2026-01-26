@@ -8,10 +8,14 @@ type Node struct {
 	rwmu  *sync.RWMutex
 }
 
-func (n *Node) Put(key, val string) {
+func (n *Node) Put(key, val string) error {
 	n.rwmu.Lock()
 	defer n.rwmu.Unlock()
 	n.items[key] = val
+
+	// Because we are working in ram there is no chance to get error
+	// But in real systems we would use grpc call etc to detect errors
+	return nil
 }
 
 func (n *Node) Get(key string) (string, bool) {

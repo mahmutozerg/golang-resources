@@ -8,7 +8,7 @@ import (
 
 func main() {
 	// Ring başlatılır ve Replikasyon Sayısı 5 olarak ayarlanır
-	ring := Ring.Ring{RCount: 5}
+	ring := Ring.Ring{ReplicaCount: 5}
 	ring.Init()
 
 	// Node'lar güvenli bir şekilde eklenir
@@ -19,13 +19,14 @@ func main() {
 		}
 	}
 
-	// Veri yazma (Coordinator 5 replikaya da yazar)
-	ring.Put("Mahmut", "Ozer")
+	ring.Put("Mahmut", "Ozer", 3)
 
 	// Veri okuma (Coordinator replikalardan veriyi çeker)
-	vals, found := ring.Get("Mahmut")
+	vals, err := ring.Get("Mahmut", 3)
 
-	if found {
+	if err == nil {
 		fmt.Println(vals)
+	} else {
+		log.Fatalf("%v", err)
 	}
 }
