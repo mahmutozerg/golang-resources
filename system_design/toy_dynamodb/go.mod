@@ -3,6 +3,7 @@ module toy_dynamodb
 go 1.25.6
 
 require (
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect

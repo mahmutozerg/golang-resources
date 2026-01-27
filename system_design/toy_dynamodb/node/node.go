@@ -30,30 +30,51 @@ func (n *Node) Put(key, val string) error {
 	n.rwmu.Lock()
 	defer n.rwmu.Unlock()
 
-	v64 := base64.StdEncoding.EncodeToString([]byte(val))
+	encLen := base64.StdEncoding.EncodedLen(len(val))
+	buf := make([]byte, 0, 4+len(key)+1+encLen+1)
 
-	c, err := n.file.WriteString(fmt.Sprintf("SET,%s,%s\n", key, v64))
+	// Append akıllı olduğu için kendisi veriyi yazıyor
+	// ve len değerini ileriye öteliyor ve artık oraya yazabiliyor düşünelim
+	// yani örnek key = foo ,se  aşağıda len=8 oluyor
+	buf = append(buf, 'S', 'E', 'T', ',')
+	buf = append(buf, key...)
+	buf = append(buf, ',')
 
+	// Ne yazıkki base64 append kadar akıllı değil
+	// Bunun sebebi base64 yazmak için var append allocate+yazmak
+	// o yüzden ona bak bu alanı kullanabilirsin diyoruz
+	// [0:buffer_boyutu+base64boyutu] diyerek her yer senin diyerek
+	// yazdırıyoruz
+	start := len(buf)
+	buf = buf[:start+encLen]
+	base64.StdEncoding.Encode(buf[start:], []byte(val))
+
+	buf = append(buf, '\n')
+
+	c, err := n.file.Write(buf)
 	if err != nil {
 		return err
 	}
 	if c == 0 {
 		return fmt.Errorf("WAL write failed: wrote 0 bytes")
 	}
-
-	if err = n.file.Sync(); err != nil {
+	if err := n.file.Sync(); err != nil {
 		return err
 	}
-	n.items[key] = val
 
+	n.items[key] = val
 	return nil
 }
 
 func (n *Node) Del(key string) error {
 	n.rwmu.Lock()
 	defer n.rwmu.Unlock()
+	buf := make([]byte, 0, 4+len(key)+1)
+	buf = append(buf, 'D', 'E', 'L', ',')
+	buf = append(buf, key...)
+	buf = append(buf, '\n')
 
-	c, err := n.file.WriteString(fmt.Sprintf("DEL,%s\n", key))
+	c, err := n.file.Write(buf)
 	if err != nil {
 		return err
 	}

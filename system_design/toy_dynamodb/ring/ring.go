@@ -1,18 +1,24 @@
 package ring
 
 import (
-	"crypto/sha1"
-	"encoding/binary"
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"sync"
-
 	custom_errors "toy_dynamodb/Errors"
 	node "toy_dynamodb/node"
+
+	"github.com/cespare/xxhash/v2"
 )
 
 const VirtualSpotCount = 100
+
+type doOpReq struct {
+	key, val string
+	w        int
+	isDelete bool
+}
 
 type getResponse struct {
 	nodeName string
@@ -61,7 +67,8 @@ func (r *Ring) AddNode(name string) error {
 	}
 	for i := range VirtualSpotCount {
 
-		uintval := getHash(fmt.Sprintf("%s#%d", name, i))
+		key := name + "#" + strconv.Itoa(i)
+		uintval := getHash(key)
 		r.nodeMap[uintval] = name
 		r.sortedNodes = append(r.sortedNodes, uintval)
 	}
@@ -83,19 +90,27 @@ func (r *Ring) Get(key string, q int) (map[string]string, error) {
 	if len(getNodes) == 0 {
 		return nil, &custom_errors.ArgError{Arg: fmt.Sprint(getNodes), Message: " returned count 0"}
 	}
-	ch := make(chan getResponse, len(getNodes))
 	vals := make(map[string]string)
+	nodes := make([]struct {
+		name string
+		nd   *node.Node
+	}, 0, len(getNodes))
 
-	for _, name := range getNodes {
+	r.rwmu.RLock()
+	for _, n := range getNodes {
+		nodes = append(nodes, struct {
+			name string
+			nd   *node.Node
+		}{n, r.nodes[n]})
+	}
+	r.rwmu.RUnlock()
 
-		go func(n string) {
-			v, ok := r.nodes[n].Get(key)
-			ch <- getResponse{
-				nodeName: n,
-				value:    v,
-				ok:       ok,
-			}
-		}(name)
+	ch := make(chan getResponse, len(nodes))
+	for _, p := range nodes {
+		go func(n string, nd *node.Node) {
+			v, ok := nd.Get(key)
+			ch <- getResponse{nodeName: n, value: v, ok: ok}
+		}(p.name, p.nd)
 	}
 
 	s, f := 0, 0
@@ -124,11 +139,13 @@ func (r *Ring) Get(key string, q int) (map[string]string, error) {
 }
 
 func (r *Ring) Put(key, val string, w int) error {
-	return r.doOp(key, val, w, false)
+	// pass by address for get rid unnecessary copies
+	return r.doOp(&doOpReq{key: key, val: val, w: w, isDelete: false})
 }
 
 func (r *Ring) Delete(key string, w int) error {
-	return r.doOp(key, "", w, true)
+
+	return r.doOp(&doOpReq{key: key, w: w, isDelete: true})
 }
 
 func (r *Ring) Init() {
@@ -155,47 +172,52 @@ func (r *Ring) getNode(val string, n int) []string {
 			seenSet[r.nodeMap[r.sortedNodes[i]]] = true
 			nodes = append(nodes, r.nodeMap[r.sortedNodes[i]])
 			ct += 1
+
 		}
 	}
-
 	return nodes
 
 }
 
-func (r *Ring) doOp(key, val string, w int, isDelete bool) error {
+func (r *Ring) doOp(rq *doOpReq) error {
 
-	if len(r.nodes) < w {
+	if len(r.nodes) < rq.w {
 		return &custom_errors.ArgError{Arg: fmt.Sprintf("%v count is %d", r.nodes, len(r.nodes)), Message: "Write Quorum Count can't be greater than node counts"}
 	}
 
-	getNodes := r.getNode(key, int(r.ReplicaCount))
+	getNodes := r.getNode(rq.key, int(r.ReplicaCount))
 
 	if len(getNodes) == 0 {
 		return &custom_errors.ArgError{Arg: fmt.Sprint(getNodes), Message: " returned count 0"}
 	}
 
-	ch := make(chan error, len(getNodes))
+	nodes := make([]*node.Node, 0, len(getNodes))
+	r.rwmu.RLock()
 
-	for _, name := range getNodes {
+	for _, n := range getNodes {
+		nd := r.nodes[n]
+		if nd != nil {
+			nodes = append(nodes, nd)
+		}
+	}
+	r.rwmu.RUnlock()
+	ch := make(chan error, len(nodes))
 
-		go func(n string) {
-			// for golang 1.25.6 loop variables are passed by ref not by value
-			// but for good sake i'll stuck to old version
-
+	for _, nd := range nodes {
+		go func(nd *node.Node) {
 			var err error
-
-			if isDelete {
-				err = r.nodes[n].Del(key)
+			if rq.isDelete {
+				err = nd.Del(rq.key)
 			} else {
-				err = r.nodes[n].Put(key, val)
+				err = nd.Put(rq.key, rq.val)
 			}
-
 			ch <- err
-
-		}(name)
+		}(nd)
 	}
 
-	for s, f := 0, 0; ; {
+	s, f := 0, 0
+
+	for {
 		err := <-ch
 
 		if err == nil {
@@ -204,19 +226,14 @@ func (r *Ring) doOp(key, val string, w int, isDelete bool) error {
 			f++
 		}
 
-		if s == w {
+		if s == rq.w {
 			return nil
-		} else if s+f == len(getNodes) {
-			return &custom_errors.QuorumWriteError{Message: "Failed to hit quorum", W: w, N: len(getNodes)}
+		} else if s+f == len(nodes) {
+			return &custom_errors.QuorumWriteError{Message: "Failed to hit quorum", W: rq.w, N: len(nodes)}
 		}
 	}
 }
 
 func getHash(val string) uint64 {
-	shaSource := sha1.New()
-	shaSource.Write([]byte(val))
-	sum := shaSource.Sum(nil)
-
-	return binary.BigEndian.Uint64(sum[:8])
-
+	return xxhash.Sum64String(val)
 }
