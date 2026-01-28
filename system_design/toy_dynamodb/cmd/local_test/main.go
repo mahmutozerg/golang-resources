@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"log"
-	"toy_dynamodb/adapter"
-	"toy_dynamodb/node"
-	"toy_dynamodb/ring"
+	"toy_dynamodb/pkg/adapter"
+	"toy_dynamodb/pkg/node"
+	"toy_dynamodb/pkg/ring"
 )
 
 func main() {

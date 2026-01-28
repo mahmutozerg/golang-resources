@@ -5,7 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
-	"toy_dynamodb/node"
+	"toy_dynamodb/pkg/node"
 	kv "toy_dynamodb/proto"
 
 	"google.golang.org/grpc"

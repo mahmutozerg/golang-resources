@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
-	Ring "toy_dynamodb/ring"
+	Ring "toy_dynamodb/pkg/ring"
 )
 
 func main() {
