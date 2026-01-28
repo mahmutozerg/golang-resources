@@ -1,15 +1,18 @@
 package ring
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"sort"
 	"strconv"
 	"sync"
 	custom_errors "toy_dynamodb/Errors"
-	node "toy_dynamodb/node"
+	kv "toy_dynamodb/proto"
 
 	"github.com/cespare/xxhash/v2"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const VirtualSpotCount = 100
@@ -24,26 +27,28 @@ type getResponse struct {
 	nodeName string
 	value    string
 	ok       bool
+	err      error
 }
 type Ring struct {
-	nodes        map[string]*node.Node
+	nodes        map[string]kv.KVStoreClient
+	connections  []kv.KVStoreClient
 	sortedNodes  []uint64
 	nodeMap      map[uint64]string
 	rwmu         *sync.RWMutex
 	ReplicaCount uint
 }
 
-func (r *Ring) AddNode(name string) error {
+func (r *Ring) AddNode(address string) error {
 
 	r.rwmu.RLock()
 	if r.nodes == nil {
 		return &custom_errors.ArgError{Arg: fmt.Sprint(r.nodes), Message: "Is Not initilized"}
 	}
-	_, exist := r.nodes[name]
+	_, exist := r.nodes[address]
 
 	if exist {
 		r.rwmu.RUnlock()
-		return &custom_errors.ArgError{Arg: name, Message: "Already Exist In Node"}
+		return &custom_errors.ArgError{Arg: address, Message: "Already Exist In Node"}
 	}
 	r.rwmu.RUnlock()
 
@@ -54,27 +59,30 @@ func (r *Ring) AddNode(name string) error {
 	// This occurs while routine a runlocks and in exact that moment
 	// routine b locks and adds to the ring, routine a thinks node doesn't exist
 	// bun infact it do exist
-	_, exist = r.nodes[name]
+	_, exist = r.nodes[address]
 
 	if exist {
-		return &custom_errors.ArgError{Arg: name, Message: "Already Exist In Node"}
+		return &custom_errors.ArgError{Arg: address, Message: "Already Exist In Node"}
 	}
 
-	tNode, err := node.New(name)
+	nodeConnection, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 
 	if err != nil {
 		return err
 	}
 	for i := range VirtualSpotCount {
 
-		key := name + "#" + strconv.Itoa(i)
+		key := address + "#" + strconv.Itoa(i)
 		uintval := getHash(key)
-		r.nodeMap[uintval] = name
+		r.nodeMap[uintval] = address
 		r.sortedNodes = append(r.sortedNodes, uintval)
 	}
 	slices.Sort(r.sortedNodes)
+	c := kv.NewKVStoreClient(nodeConnection)
 
-	r.nodes[name] = tNode
+	r.nodes[address] = c
+	r.connections = append(r.connections, c)
+
 	return nil
 
 }
@@ -93,23 +101,27 @@ func (r *Ring) Get(key string, q int) (map[string]string, error) {
 	vals := make(map[string]string)
 	nodes := make([]struct {
 		name string
-		nd   *node.Node
+		nd   kv.KVStoreClient
 	}, 0, len(getNodes))
 
 	r.rwmu.RLock()
 	for _, n := range getNodes {
 		nodes = append(nodes, struct {
 			name string
-			nd   *node.Node
+			nd   kv.KVStoreClient
 		}{n, r.nodes[n]})
 	}
 	r.rwmu.RUnlock()
 
 	ch := make(chan getResponse, len(nodes))
 	for _, p := range nodes {
-		go func(n string, nd *node.Node) {
-			v, ok := nd.Get(key)
-			ch <- getResponse{nodeName: n, value: v, ok: ok}
+		go func(n string, nd kv.KVStoreClient) {
+			v, err := nd.Get(context.Background(), &kv.GetRequest{Key: key})
+			if err != nil {
+				ch <- getResponse{nodeName: n, err: err, ok: false}
+				return
+			}
+			ch <- getResponse{nodeName: n, value: string(v.Value), ok: v.Found, err: err}
 		}(p.name, p.nd)
 	}
 
@@ -150,9 +162,31 @@ func (r *Ring) Delete(key string, w int) error {
 
 func (r *Ring) Init() {
 	r.nodeMap = make(map[uint64]string)
-	r.nodes = make(map[string]*node.Node)
+	r.nodes = make(map[string]kv.KVStoreClient)
 	r.sortedNodes = []uint64{}
 	r.rwmu = &sync.RWMutex{}
+}
+
+// Burası ramde test yapabilmek için var olan bir yer genel logici test etiyoruz yani
+func (r *Ring) RegisterClient(address string, client kv.KVStoreClient) {
+	r.rwmu.Lock()
+	defer r.rwmu.Unlock()
+
+	if _, exists := r.nodes[address]; exists {
+		return
+	}
+
+	// 1. Client'ı kaydet
+	r.nodes[address] = client
+	r.connections = append(r.connections, client)
+
+	for i := range VirtualSpotCount {
+		key := address + "#" + strconv.Itoa(i)
+		uintval := getHash(key)
+		r.nodeMap[uintval] = address
+		r.sortedNodes = append(r.sortedNodes, uintval)
+	}
+	slices.Sort(r.sortedNodes)
 }
 
 func (r *Ring) getNode(val string, n int) []string {
@@ -191,7 +225,7 @@ func (r *Ring) doOp(rq *doOpReq) error {
 		return &custom_errors.ArgError{Arg: fmt.Sprint(getNodes), Message: " returned count 0"}
 	}
 
-	nodes := make([]*node.Node, 0, len(getNodes))
+	nodes := make([]kv.KVStoreClient, 0, len(getNodes))
 	r.rwmu.RLock()
 
 	for _, n := range getNodes {
@@ -204,12 +238,31 @@ func (r *Ring) doOp(rq *doOpReq) error {
 	ch := make(chan error, len(nodes))
 
 	for _, nd := range nodes {
-		go func(nd *node.Node) {
+		go func(nd kv.KVStoreClient) {
 			var err error
+			var deleteRes *kv.DeleteResponse
+			var putRes *kv.PutResponse
 			if rq.isDelete {
-				err = nd.Del(rq.key)
+				deleteRes, err = nd.Delete(context.Background(), &kv.DeleteRequest{Key: rq.key})
+				if err != nil { // Önce ağ hatası kontrolü
+					ch <- err
+					return
+				}
+
+				if !deleteRes.Success {
+					err = fmt.Errorf("Something Went Wrong DeleteRes Returned false without error")
+				}
+
 			} else {
-				err = nd.Put(rq.key, rq.val)
+				putRes, err = nd.Put(context.Background(), &kv.PutRequest{Key: rq.key, Value: []byte(rq.val)})
+				if err != nil { // Önce ağ hatası kontrolü
+					ch <- err
+					return
+				}
+				if !putRes.Success {
+					err = fmt.Errorf("Something Went Wrong DeleteRes Returned false without error")
+				}
+
 			}
 			ch <- err
 		}(nd)

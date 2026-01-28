@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  node-1:
+    build: .
+    container_name: node-1
+    environment:
+      - NODE_NAME=node-1
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./wal/node-1:/root/wal
+    networks:
+      - dynamo-net
+
+  node-2:
+    build: .
+    container_name: node-2
+    environment:
+      - NODE_NAME=node-2
+    ports:
+      - "50052:50051"
+    volumes:
+      - ./wal/node-2:/root/wal
+    networks:
+      - dynamo-net
+
+  # --- NODE 3 ---
+  node-3:
+    build: .
+    container_name: node-3
+    environment:
+      - NODE_NAME=node-3
+    ports:
+      - "50053:50051"
+    volumes:
+      - ./wal/node-3:/root/wal
+    networks:
+      - dynamo-net
+
+networks:
+  dynamo-net:
+    driver: bridge

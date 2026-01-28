@@ -31,9 +31,13 @@ func (n *Node) Put(key, val string) error {
 	defer n.rwmu.Unlock()
 
 	encLen := base64.StdEncoding.EncodedLen(len(val))
+
+	// Şimdi buradaki sistemi şöyle anlatmak istiyorum
+	// Burada biz bellekte n limitli bir byte arrray oluşturuyoruz
+	// fakat şu anda hepsi boş yani capacity = n , len=0 durumunda
 	buf := make([]byte, 0, 4+len(key)+1+encLen+1)
 
-	// Append akıllı olduğu için kendisi veriyi yazıyor
+	// Append akıllı olduğu için len'i arttırıp içerisine yazıyor
 	// ve len değerini ileriye öteliyor ve artık oraya yazabiliyor düşünelim
 	// yani örnek key = foo ,se  aşağıda len=8 oluyor
 	buf = append(buf, 'S', 'E', 'T', ',')
@@ -42,9 +46,10 @@ func (n *Node) Put(key, val string) error {
 
 	// Ne yazıkki base64 append kadar akıllı değil
 	// Bunun sebebi base64 yazmak için var append allocate+yazmak
-	// o yüzden ona bak bu alanı kullanabilirsin diyoruz
-	// [0:buffer_boyutu+base64boyutu] diyerek her yer senin diyerek
-	// yazdırıyoruz
+	// O yüzden güncel yazdığmız alan len(buf)+encode edilmiş stringin boyutu
+	// kadar olan alanı 	buf = buf[:start+encLen] syntaxı ile claim ediyoruz
+	// Eğer bu işlemi yapmazsak veriyi yazarız fakat len değeri artmaz o yüzden
+	// 	buf = append(buf, '\n') değeri encoded değerin sonuna değil ilk karakterine yazılır
 	start := len(buf)
 	buf = buf[:start+encLen]
 	base64.StdEncoding.Encode(buf[start:], []byte(val))
