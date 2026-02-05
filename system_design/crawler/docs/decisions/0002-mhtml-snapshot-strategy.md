@@ -2,7 +2,7 @@
 
 ## Context and Problem Statement
 
-Following [ADR 0001](https://www.google.com/search?q=./0001-crawler-system-proposal.md), we decided to use headless browsers for scraping. Initially, saving pages as PDFs was considered. However, PDFs often alter the layout (print media query), break interactive elements, and do not faithfully represent the digital state of the DOM.
+Following [ADR 0001](https://github.com/mahmutozerg/golang-resources/blob/main/system_design/crawler/docs/decisions/0001-crawler-system-proposal.md), we decided to use headless browsers for scraping. Initially, saving pages as PDFs was considered. However, PDFs often alter the layout (print media query), break interactive elements, and do not faithfully represent the digital state of the DOM.
 
 We need a format that encapsulates the HTML, CSS, Images, and current JavaScript state into a single, portable file while preserving the exact visual fidelity of the browser session.
 
