@@ -17,7 +17,7 @@ Chosen option: `Save pages by using headless browsers`, because it is easy to im
 ### Future work
 
 - [ ] Implement BFS using a queue
-- [ ] Implement a multi-threaded crawler
+- [x] Implement a multi-threaded crawler
 - [ ] Implement rate limiting and robots.txt awareness
 
 ### Consequences

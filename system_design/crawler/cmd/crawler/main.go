@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/url"
 	"os"
-	"path"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -29,6 +29,7 @@ func StartLocateLinks(pwi *fetcher.PwInstance, baseUrl *url.URL, chSize int) []s
 
 	visited := make(map[string]bool)
 	var wg *sync.WaitGroup = new(sync.WaitGroup)
+
 	func() {
 		wg.Add(1)
 		go pwi.LocateLinks(baseUrl, urlCh, errCh, wg)
@@ -40,8 +41,6 @@ func StartLocateLinks(pwi *fetcher.PwInstance, baseUrl *url.URL, chSize int) []s
 		close(urlCh)
 	}()
 
-	// Todo implement channel based solution instead of returning the string
-	// We'll implement it after we migrate to multi threaded crawler
 inf_loop:
 	for {
 		select {
@@ -70,7 +69,8 @@ func main() {
 	seedUrls, err := config.LoadSeeds("./seed.txt")
 	Must(err, "Failed to Load Seeds %v: ")
 
-	fmt.Printf("%v \n", seedUrls)
+	fmt.Printf("Seed URLs: %v \n", seedUrls)
+
 	pwi, err := fetcher.New(fetcher.CustomBrowserTypeOptions{
 		LaunchOptions:  playwright.BrowserTypeLaunchOptions{Headless: playwright.Bool(false)},
 		OnlySameOrigin: true,
@@ -81,6 +81,7 @@ func main() {
 	}
 	defer pwi.Close()
 
+	fmt.Println("Visiting Seed URL...")
 	err = pwi.GoTo(seedUrls[0].String(), fetcher.CustomGotoOptions{
 		GotoOptions: playwright.PageGotoOptions{
 			WaitUntil: playwright.WaitUntilStateNetworkidle,
@@ -88,38 +89,51 @@ func main() {
 		AllowInsecureConnections: false,
 		SessionType:              fetcher.Status(fetcher.CDPSession),
 	})
+	if err != nil {
+		log.Fatalf("Seed URL Error: %v", err)
+	}
 
 	linksTovisit := StartLocateLinks(pwi, seedUrls[0], 200)
-
 	if len(linksTovisit) == 0 {
 		log.Println("No link have found, Closing.")
 		return
 	}
 
+	fmt.Printf("Found %d link Total. Starting to Download...\n", len(linksTovisit))
+	var visitWg *sync.WaitGroup = new(sync.WaitGroup)
 	for c, j := range linksTovisit {
 		parse, err := url.Parse(j)
 		if err != nil {
 			log.Printf("Failed to parse links to visit entry: %v ", err)
 			continue
 		}
+
 		outDir := storage.CreateOutDir("../../files", parse)
-		filename := path.Join(outDir, time.Now().UTC().Format("20060102T150405")+".mhtml")
+		filename := filepath.Join(outDir, time.Now().UTC().Format("20060102T150405")+".mhtml")
+		visitWg.Add(1)
+		go func(targetUrl string, targetFile string) {
+			defer visitWg.Done()
+			mhtml, err := pwi.FetchMHTML(targetUrl)
+			if err != nil {
+				log.Printf("Error (%s): %v", targetUrl, err)
+				return
+			}
 
-		mhtml, err := pwi.FetchMHTML(j)
-		if err != nil {
-			log.Printf("%v", err)
-			continue
-		}
+			err = os.WriteFile(targetFile, mhtml, 0644)
 
-		err = os.WriteFile(filename, mhtml, 0644)
+			if err != nil {
+				log.Printf("Disk Write Error: %v ", err)
+				return
+			}
 
-		if err != nil {
-			log.Printf("%v ", err)
-			continue
-		}
-		if c == 3 {
+			fmt.Printf("[%d] saved: %s\n", c, j)
+
+		}(j, filename)
+		if c == 10 {
+			fmt.Println("Test limit (3) exceeded, stopping...")
 			break
 		}
-	}
 
+	}
+	visitWg.Wait()
 }

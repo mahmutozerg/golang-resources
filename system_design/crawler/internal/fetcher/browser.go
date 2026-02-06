@@ -8,14 +8,12 @@ import (
 	"github.com/playwright-community/playwright-go"
 )
 
-// Client Is Responsible to free pointers
-// please use defer  PwInstance.Close()
 type PwInstance struct {
 	pw             *playwright.Playwright
 	browser        playwright.Browser
 	context        playwright.BrowserContext
-	session        playwright.CDPSession
-	page           playwright.Page
+	pages          map[string]playwright.Page
+	pageMu         *sync.RWMutex
 	OnlySameOrigin bool
 }
 
@@ -38,10 +36,27 @@ type CustomGotoOptions struct {
 }
 
 func (pwi *PwInstance) GoTo(url string, opt CustomGotoOptions) error {
+	pwi.pageMu.RLock()
+	p, ok := pwi.pages[url]
+	pwi.pageMu.RUnlock()
+
+	if !ok {
+		pwi.pageMu.Lock()
+		if p, ok = pwi.pages[url]; !ok {
+			newPage, err := pwi.context.NewPage()
+			if err != nil {
+				pwi.pageMu.Unlock()
+				return fmt.Errorf("yeni sekme açılamadı: %w", err)
+			}
+			pwi.pages[url] = newPage
+			p = newPage
+		}
+		pwi.pageMu.Unlock()
+	}
 
 	switch opt.SessionType {
 	case Status(CDPSession):
-		pwi.page.AddStyleTag(playwright.PageAddStyleTagOptions{
+		p.AddStyleTag(playwright.PageAddStyleTagOptions{
 			Content: playwright.String(`
 			* {
 				animation: none !important;
@@ -52,15 +67,12 @@ func (pwi *PwInstance) GoTo(url string, opt CustomGotoOptions) error {
 	case Status(WARCSession):
 		return fmt.Errorf("WARCSession Not Implemented")
 	}
-	resp, err := pwi.page.Goto(url, opt.GotoOptions)
 
+	resp, err := p.Goto(url, opt.GotoOptions)
 	if err != nil {
 		return err
 	}
 
-	// If we try to navigate in to same page we'll get  resp nil
-	// and also err nil this fixes the case where we are trying to navigate to the same page we
-	// are allready in it
 	if resp != nil {
 		if !(resp.Status() >= 200 && resp.Status() < 300) {
 			return fmt.Errorf("HTTP Hatası alındı (%d): %s", resp.Status(), resp.StatusText())
@@ -72,7 +84,16 @@ func (pwi *PwInstance) GoTo(url string, opt CustomGotoOptions) error {
 func (pwi *PwInstance) LocateLinks(parentUrl *url.URL, urlCh chan string, errCh chan error, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	entries, err := pwi.page.Locator("a").All()
+	pwi.pageMu.RLock()
+	p, ok := pwi.pages[parentUrl.String()]
+	pwi.pageMu.RUnlock()
+
+	if !ok {
+		errCh <- fmt.Errorf("Link toplanacak sayfa map'te bulunamadı: %v", parentUrl)
+		return
+	}
+
+	entries, err := p.Locator("a").All()
 	if err != nil {
 		errCh <- err
 		return
@@ -93,16 +114,11 @@ func (pwi *PwInstance) LocateLinks(parentUrl *url.URL, urlCh chan string, errCh 
 		if pwi.OnlySameOrigin && absUrl.Host != parentUrl.Host {
 			continue
 		}
-		finalLink := absUrl.String()
-
-		urlCh <- finalLink
-
+		urlCh <- absUrl.String()
 	}
 }
 
-// Use FetchMHTML after you navigated the page
 func (pwi *PwInstance) FetchMHTML(url string) ([]byte, error) {
-
 	err := pwi.GoTo(url, CustomGotoOptions{
 		GotoOptions: playwright.PageGotoOptions{
 			WaitUntil: playwright.WaitUntilStateNetworkidle,
@@ -113,10 +129,36 @@ func (pwi *PwInstance) FetchMHTML(url string) ([]byte, error) {
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("Navigasyon hatası: %w", err)
+		// Handle cleanup at error
+		return nil, fmt.Errorf("Navigation Error: %w", err)
 	}
 
-	result, err := pwi.session.Send("Page.captureSnapshot", map[string]any{
+	pwi.pageMu.RLock()
+	page, ok := pwi.pages[url]
+	pwi.pageMu.RUnlock()
+
+	if !ok {
+		return nil, fmt.Errorf("Page Not Found (Internal Error)")
+	}
+
+	defer func() {
+		pwi.pageMu.Lock()
+		delete(pwi.pages, url)
+		pwi.pageMu.Unlock()
+		page.Close()
+	}()
+
+	cdpSession, err := pwi.context.NewCDPSession(page)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to start CDP Session: %w", err)
+	}
+	defer cdpSession.Detach()
+
+	if _, err = cdpSession.Send("Page.enable", nil); err != nil {
+		return nil, fmt.Errorf("Failed to Enable CDP : %w", err)
+	}
+
+	result, err := cdpSession.Send("Page.captureSnapshot", map[string]any{
 		"format": "mhtml",
 	})
 
@@ -144,7 +186,6 @@ func New(opt CustomBrowserTypeOptions) (*PwInstance, error) {
 	}
 
 	browser, err := pw.Chromium.Launch(opt.LaunchOptions)
-
 	if err != nil {
 		return nil, err
 	}
@@ -154,34 +195,26 @@ func New(opt CustomBrowserTypeOptions) (*PwInstance, error) {
 		return nil, err
 	}
 
-	page, err := context.NewPage()
-	if err != nil {
-		return nil, err
-	}
-
-	// In future we need a interface that covers both cdp and warc
-	// we should call interface.NewSession() in order to use them
-	cdpSession, err := context.NewCDPSession(page)
-	if err != nil {
-		return nil, fmt.Errorf("CDP session başlatılamadı: %w", err)
-	}
-
-	if _, err = cdpSession.Send("Page.enable", nil); err != nil {
-		return nil, fmt.Errorf("CDP Page domain aktif edilemedi: %w", err)
-	}
+	pages := make(map[string]playwright.Page)
 
 	return &PwInstance{
 		pw:             pw,
 		browser:        browser,
 		context:        context,
-		session:        cdpSession,
 		OnlySameOrigin: opt.OnlySameOrigin,
-		page:           page,
+		pages:          pages,
+		pageMu:         new(sync.RWMutex),
 	}, nil
 }
+
 func (pwi *PwInstance) Close() {
-	if pwi.page != nil {
-		pwi.page.Close()
+	if pwi.pages != nil {
+		pwi.pageMu.Lock()
+		for key, page := range pwi.pages {
+			page.Close()
+			delete(pwi.pages, key)
+		}
+		pwi.pageMu.Unlock()
 	}
 
 	if pwi.context != nil {

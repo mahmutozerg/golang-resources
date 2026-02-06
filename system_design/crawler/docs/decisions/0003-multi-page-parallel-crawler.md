@@ -22,7 +22,7 @@ We will refactor `PwInstance` to manage a thread-safe collection of active pages
 **Reasoning:**
 
 1. **Isolation:** Each URL is processed in its own dedicated tab (`Page`), preventing DOM leakage or navigation conflicts between concurrent jobs.
-2. **Asynchronous Workflow:** This architecture enables a split between `GoToAsync` (Navigating/Registering) and `FetchXHTML` (Snapshotting/Cleaning). A worker can initiate navigation for multiple URLs without blocking the snapshotting process of others.
+2. **Asynchronous Workflow:** This architecture enables a split between `GoToAsync` (Navigating/Registering) and `FetchMHTML` (Snapshotting/Cleaning). A worker can initiate navigation for multiple URLs without blocking the snapshotting process of others.
 3. **Resource Efficiency:** We share a single `BrowserContext` (cookies/cache shared) but multiply the `Page` instances (tabs), which is lighter than multiplying Contexts.
 4. **State Control:** The registry pattern allows us to track which URLs are currently "in-flight" (being processed).
 
