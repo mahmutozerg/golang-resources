@@ -36,7 +36,7 @@ The `PwInstance` struct will be updated to include:
 **Workflow:**
 
 1. **GoToAsync:** Opens a new tab, locks the map, registers the page (`pages[url] = page`), unlocks, and initiates navigation in a goroutine.
-2. **FetchXHTML:** Accepts a URL, locks the map (Read), retrieves the corresponding `Page`, performs the MHTML snapshot via CDP, closes the page, and removes the entry from the map (Cleanup).
+2. **FetchMHTML:** Accepts a URL, locks the map (Read), retrieves the corresponding `Page`, performs the MHTML snapshot via CDP, closes the page, and removes the entry from the map (Cleanup).
 
 ## Consequences
 

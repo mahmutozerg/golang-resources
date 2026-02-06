@@ -100,8 +100,8 @@ func (pwi *PwInstance) LocateLinks(parentUrl *url.URL, urlCh chan string, errCh 
 	}
 }
 
-// Use FetchXHTML after you navigated the page
-func (pwi *PwInstance) FetchXHTML(url string) ([]byte, error) {
+// Use FetchMHTML after you navigated the page
+func (pwi *PwInstance) FetchMHTML(url string) ([]byte, error) {
 
 	err := pwi.GoTo(url, CustomGotoOptions{
 		GotoOptions: playwright.PageGotoOptions{

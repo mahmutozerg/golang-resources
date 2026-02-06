@@ -105,7 +105,7 @@ func main() {
 		outDir := storage.CreateOutDir("../../files", parse)
 		filename := path.Join(outDir, time.Now().UTC().Format("20060102T150405")+".mhtml")
 
-		mhtml, err := pwi.FetchXHTML(j)
+		mhtml, err := pwi.FetchMHTML(j)
 		if err != nil {
 			log.Printf("%v", err)
 			continue
