@@ -111,7 +111,7 @@ func main() {
 		outDir := storage.CreateOutDir("../../files", parse)
 		filename := filepath.Join(outDir, time.Now().UTC().Format("20060102T150405")+".mhtml")
 		visitWg.Add(1)
-		go func(targetUrl string, targetFile string) {
+		go func(targetUrl string, c int, targetFile string) {
 			defer visitWg.Done()
 			mhtml, err := pwi.FetchMHTML(targetUrl)
 			if err != nil {
@@ -126,9 +126,9 @@ func main() {
 				return
 			}
 
-			fmt.Printf("[%d] saved: %s\n", c, j)
+			fmt.Printf("[%d] saved: %s\n", c, targetUrl)
 
-		}(j, filename)
+		}(j, c, filename)
 		if c == 10 {
 			fmt.Println("Test limit (3) exceeded, stopping...")
 			break
