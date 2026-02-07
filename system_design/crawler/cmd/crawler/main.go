@@ -11,6 +11,7 @@ import (
 
 	"github.com/mahmutozerg/golang-resources/system_design/crawler/internal/config"
 	"github.com/mahmutozerg/golang-resources/system_design/crawler/internal/fetcher"
+	checker "github.com/mahmutozerg/golang-resources/system_design/crawler/internal/robot"
 	"github.com/mahmutozerg/golang-resources/system_design/crawler/internal/storage"
 	"github.com/playwright-community/playwright-go"
 )
@@ -80,6 +81,14 @@ func main() {
 		log.Fatalf("Failed to Create Fetcher Instance %v : ", err)
 	}
 	defer pwi.Close()
+	robotChecker := checker.New("*", func(u string) ([]byte, error) {
+		return pwi.FetchRobotsContent(u)
+	})
+
+	if allowed := robotChecker.IsAllowed(seedUrls[0]); !allowed {
+		log.Printf("Seed Url is disalloweb in robots txt.")
+		return
+	}
 
 	fmt.Println("Visiting Seed URL...")
 	err = pwi.GoTo(seedUrls[0].String(), fetcher.CustomGotoOptions{
@@ -108,7 +117,10 @@ func main() {
 			log.Printf("Failed to parse links to visit entry: %v ", err)
 			continue
 		}
-
+		if allowed := robotChecker.IsAllowed(parse); !allowed {
+			log.Printf("Robots.txt blockage: %s skipped.", j)
+			continue
+		}
 		outDir := storage.CreateOutDir("../../files", parse)
 		filename := filepath.Join(outDir, time.Now().UTC().Format("20060102T150405")+".mhtml")
 		sem <- struct{}{}
@@ -133,8 +145,8 @@ func main() {
 			fmt.Printf("[%d] saved: %s\n", c, targetUrl)
 
 		}(j, c, filename)
-		if c == 10 {
-			fmt.Println("Test limit (10) exceeded, stopping...")
+		if c >= 4 {
+			fmt.Println("Test limit (4) exceeded, stopping...")
 			break
 		}
 

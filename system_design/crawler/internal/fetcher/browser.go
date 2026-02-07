@@ -129,7 +129,7 @@ func (pwi *PwInstance) FetchMHTML(url string) ([]byte, error) {
 	})
 
 	if err != nil {
-		// Handle cleanup at error
+		// #TODO Handle cleanup at error
 		return nil, fmt.Errorf("Navigation Error: %w", err)
 	}
 
@@ -173,10 +173,46 @@ func (pwi *PwInstance) FetchMHTML(url string) ([]byte, error) {
 
 	dataStr, ok := dataMap["data"].(string)
 	if !ok {
-		return nil, fmt.Errorf("CDP datasının formatı string değil veya boş")
+		return nil, fmt.Errorf("CDP data is not string or its nill")
 	}
 
 	return []byte(dataStr), nil
+}
+
+func (pwi *PwInstance) FetchRobotsContent(url string) ([]byte, error) {
+	pwi.pageMu.Lock()
+	page, err := pwi.context.NewPage()
+	pwi.pageMu.Unlock()
+
+	if err != nil {
+		return nil, fmt.Errorf("Failed to open tab for robots.txt: %w", err)
+	}
+
+	defer page.Close()
+
+	resp, err := page.Goto(url, playwright.PageGotoOptions{
+		WaitUntil: playwright.WaitUntilStateDomcontentloaded,
+		Timeout:   playwright.Float(10000),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status() == 404 {
+		return []byte(""), nil
+	}
+
+	if resp.Status() == 401 || resp.Status() == 403 {
+		return []byte("User-agent: *\nDisallow: /"), nil
+	}
+
+	content, err := page.Locator("body").InnerText()
+	if err != nil {
+		return nil, fmt.Errorf("Failed to read content: %w", err)
+	}
+
+	fmt.Printf("%s robots txt data", content)
+	return []byte(content), nil
 }
 
 func New(opt CustomBrowserTypeOptions) (*PwInstance, error) {
