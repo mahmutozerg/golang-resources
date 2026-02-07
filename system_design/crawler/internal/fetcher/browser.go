@@ -211,7 +211,7 @@ func (pwi *PwInstance) FetchRobotsContent(url string) ([]byte, error) {
 		return nil, fmt.Errorf("Failed to read content: %w", err)
 	}
 
-	fmt.Printf("%s robots txt data", content)
+	//fmt.Printf("%s robots txt data", content)
 	return []byte(content), nil
 }
 
