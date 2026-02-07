@@ -88,8 +88,8 @@ func (pwi *PwInstance) LocateLinks(parentUrl *url.URL, urlCh chan string, errCh 
 	p, ok := pwi.pages[parentUrl.String()]
 	pwi.pageMu.RUnlock()
 
-	if !ok {
-		errCh <- fmt.Errorf("Link toplanacak sayfa map'te bulunamadı: %v", parentUrl)
+	if !ok || parentUrl == nil {
+		errCh <- fmt.Errorf("Failed to find link in the map or parenUrl returned nil : %v", parentUrl)
 		return
 	}
 

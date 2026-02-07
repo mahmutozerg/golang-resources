@@ -49,5 +49,5 @@ The `PwInstance` struct will be updated to include:
 
 ## Future Work
 
-- [ ] **Worker Pool Limits:** Implement a semaphore or worker pool pattern to limit the maximum number of concurrent tabs (e.g., max 10 tabs) to prevent OOM (Out of Memory) crashes.
+- [x] **Worker Pool Limits:** Implement a semaphore or worker pool pattern to limit the maximum number of concurrent tabs (e.g., max 10 tabs) to prevent OOM (Out of Memory) crashes.
 - [ ] **Orphan Cleanup:** Implement a background routine or timeout mechanism to clean up pages in the registry that hang indefinitely during navigation.

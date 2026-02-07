@@ -101,6 +101,7 @@ func main() {
 
 	fmt.Printf("Found %d link Total. Starting to Download...\n", len(linksTovisit))
 	var visitWg *sync.WaitGroup = new(sync.WaitGroup)
+	sem := make(chan struct{}, 5)
 	for c, j := range linksTovisit {
 		parse, err := url.Parse(j)
 		if err != nil {
@@ -110,9 +111,12 @@ func main() {
 
 		outDir := storage.CreateOutDir("../../files", parse)
 		filename := filepath.Join(outDir, time.Now().UTC().Format("20060102T150405")+".mhtml")
+		sem <- struct{}{}
+
 		visitWg.Add(1)
 		go func(targetUrl string, c int, targetFile string) {
 			defer visitWg.Done()
+			defer func() { <-sem }()
 			mhtml, err := pwi.FetchMHTML(targetUrl)
 			if err != nil {
 				log.Printf("Error (%s): %v", targetUrl, err)
@@ -130,7 +134,7 @@ func main() {
 
 		}(j, c, filename)
 		if c == 10 {
-			fmt.Println("Test limit (3) exceeded, stopping...")
+			fmt.Println("Test limit (10) exceeded, stopping...")
 			break
 		}
 
