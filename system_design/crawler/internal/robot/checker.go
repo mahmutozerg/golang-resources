@@ -51,20 +51,23 @@ func (c *Checker) IsAllowed(targetUrl *url.URL) bool {
 	robotsURL := targetUrl.Scheme + "://" + targetUrl.Host + "/robots.txt"
 	data, err := c.fetcher(robotsURL)
 
+	// Failed to get robots.txt
 	if err != nil {
-		c.hostRules[host] = nil
-		return true
+
+		return false
 	}
 
+	// Empty or nill robots.txt, allow, rules nil means you can visit everywhere
 	if len(data) == 0 {
+
 		c.hostRules[host] = nil
 		return true
 	}
 
+	// Failed to parse, assume disallowed
 	rules, err := robotstxt.FromBytes(data)
 	if err != nil {
-		c.hostRules[host] = nil
-		return true
+		return false
 	}
 
 	group = rules.FindGroup(c.AgentName)
