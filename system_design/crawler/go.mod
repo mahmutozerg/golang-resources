@@ -5,6 +5,7 @@ go 1.25.6
 require (
 	github.com/playwright-community/playwright-go v0.5200.1
 	github.com/temoto/robotstxt v1.1.2
+	golang.org/x/time v0.14.0
 )
 
 require (

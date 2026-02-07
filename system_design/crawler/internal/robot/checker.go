@@ -3,6 +3,7 @@ package checker
 import (
 	"net/url"
 	"sync"
+	"time"
 
 	"github.com/temoto/robotstxt"
 )
@@ -24,7 +25,7 @@ func New(agentName string, fetcher FetcherFunc) *Checker {
 	}
 }
 
-func (c *Checker) IsAllowed(targetUrl *url.URL) bool {
+func (c *Checker) IsAllowed(targetUrl *url.URL) (bool, time.Duration) {
 	host := targetUrl.Host
 
 	c.rwMu.RLock()
@@ -33,9 +34,11 @@ func (c *Checker) IsAllowed(targetUrl *url.URL) bool {
 
 	if ok {
 		if group == nil {
-			return true
+
+			return true, 0
 		}
-		return group.Test(targetUrl.Path)
+
+		return group.Test(targetUrl.Path), group.CrawlDelay
 	}
 
 	c.rwMu.Lock()
@@ -43,9 +46,9 @@ func (c *Checker) IsAllowed(targetUrl *url.URL) bool {
 
 	if group, ok = c.hostRules[host]; ok {
 		if group == nil {
-			return true
+			return true, 0
 		}
-		return group.Test(targetUrl.Path)
+		return group.Test(targetUrl.Path), group.CrawlDelay
 	}
 
 	robotsURL := targetUrl.Scheme + "://" + targetUrl.Host + "/robots.txt"
@@ -53,28 +56,29 @@ func (c *Checker) IsAllowed(targetUrl *url.URL) bool {
 
 	// Failed to get robots.txt
 	if err != nil {
-
-		return false
+		return false, 0
 	}
 
-	// Empty or nill robots.txt, allow, rules nil means you can visit everywhere
+	// Empty or non existant robots.txt, allow
+	// rules nil means you can visit everywhere
 	if len(data) == 0 {
 
 		c.hostRules[host] = nil
-		return true
+		return true, 0
 	}
 
-	// Failed to parse, assume disallowed
 	rules, err := robotstxt.FromBytes(data)
+	// Failed to parse, assume disallowed
 	if err != nil {
-		return false
+		return false, 0
 	}
 
 	group = rules.FindGroup(c.AgentName)
+
 	c.hostRules[host] = group
 
 	if group == nil {
-		return true
+		return true, 0
 	}
-	return group.Test(targetUrl.Path)
+	return group.Test(targetUrl.Path), group.CrawlDelay
 }

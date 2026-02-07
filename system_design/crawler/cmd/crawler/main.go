@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	checker "github.com/mahmutozerg/golang-resources/system_design/crawler/internal/robot"
 	"github.com/mahmutozerg/golang-resources/system_design/crawler/internal/storage"
 	"github.com/playwright-community/playwright-go"
+	"golang.org/x/time/rate"
 )
 
 func Must(err error, msg string) {
@@ -85,7 +88,7 @@ func main() {
 		return pwi.FetchRobotsContent(u)
 	})
 
-	if allowed := robotChecker.IsAllowed(seedUrls[0]); !allowed {
+	if allowed, _ := robotChecker.IsAllowed(seedUrls[0]); !allowed {
 		log.Printf("Seed Url is disalloweb in robots txt.")
 		return
 	}
@@ -111,20 +114,46 @@ func main() {
 	fmt.Printf("Found %d link Total. Starting to Download...\n", len(linksTovisit))
 	var visitWg *sync.WaitGroup = new(sync.WaitGroup)
 	sem := make(chan struct{}, 5)
+
+	limiter := rate.NewLimiter(rate.Limit(1), 1)
+
+	t := time.Now()
 	for c, j := range linksTovisit {
+
 		parse, err := url.Parse(j)
 		if err != nil {
-			log.Printf("Failed to parse links to visit entry: %v ", err)
+			log.Printf("Failed to parse %v to visit entry: %v ", j, err)
 			continue
 		}
-		if allowed := robotChecker.IsAllowed(parse); !allowed {
+		allowed, ts := robotChecker.IsAllowed(parse)
+
+		fmt.Println(ts)
+		if !allowed {
 			log.Printf("Robots.txt blockage: %s skipped.", j)
 			continue
 		}
+
+		if ts > 0 {
+
+			newLimit := rate.Every(ts)
+
+			if limiter.Limit() > newLimit {
+				fmt.Printf("Slowing down to robots.txt speed: %v \n", ts)
+				limiter.SetLimit(newLimit)
+			}
+		}
+
+		if err := limiter.Wait(context.Background()); err != nil {
+			log.Printf("Limiter hatası: %v", err)
+			continue
+		}
+		jitter := time.Duration(rand.Intn(2000)+500) * time.Millisecond
+		time.Sleep(jitter)
+
 		outDir := storage.CreateOutDir("../../files", parse)
 		filename := filepath.Join(outDir, time.Now().UTC().Format("20060102T150405")+".mhtml")
-		sem <- struct{}{}
 
+		sem <- struct{}{}
 		visitWg.Add(1)
 		go func(targetUrl string, c int, targetFile string) {
 			defer visitWg.Done()
@@ -152,4 +181,5 @@ func main() {
 
 	}
 	visitWg.Wait()
+	fmt.Printf("%v", time.Since(t))
 }

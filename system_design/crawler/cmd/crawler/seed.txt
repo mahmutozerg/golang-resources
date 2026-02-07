@@ -1,1 +1,1 @@
-https://en.wikipedia.org/wiki/Argon2
+https://aur.archlinux.org/packages/playwright
