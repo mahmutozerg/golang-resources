@@ -102,6 +102,8 @@ func (pwi *PwInstance) LocateLinks(parent CrawlJob, crawlCh chan CrawlJob, errCh
 		return
 	}
 
+	var linksToPush []*url.URL
+
 	for _, entry := range entries {
 		href, err := entry.GetAttribute("href")
 		if err != nil || href == "" || href == "#" {
@@ -112,14 +114,22 @@ func (pwi *PwInstance) LocateLinks(parent CrawlJob, crawlCh chan CrawlJob, errCh
 		if err != nil {
 			continue
 		}
+		relUrl.Fragment = ""
 		absUrl := parent.Url.ResolveReference(relUrl)
-
 		if pwi.OnlySameOrigin && absUrl.Host != parent.Url.Host {
 			continue
 		}
-		wg.Add(1)
-		crawlCh <- CrawlJob{absUrl, parent.Depth + 1}
+
+		linksToPush = append(linksToPush, absUrl)
 	}
+
+	wg.Add(len(linksToPush))
+
+	go func(urls []*url.URL, depth int) {
+		for _, u := range urls {
+			crawlCh <- CrawlJob{Url: u, Depth: depth}
+		}
+	}(linksToPush, parent.Depth+1)
 }
 
 func (pwi *PwInstance) ClosePage(url string) {

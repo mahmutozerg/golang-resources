@@ -14,7 +14,7 @@ import (
 
 	"github.com/mahmutozerg/golang-resources/system_design/crawler/internal/config"
 	"github.com/mahmutozerg/golang-resources/system_design/crawler/internal/fetcher"
-	checker "github.com/mahmutozerg/golang-resources/system_design/crawler/internal/robot"
+	policy "github.com/mahmutozerg/golang-resources/system_design/crawler/internal/policy"
 	"github.com/mahmutozerg/golang-resources/system_design/crawler/internal/storage"
 	"github.com/playwright-community/playwright-go"
 	"golang.org/x/time/rate"
@@ -49,7 +49,7 @@ func main() {
 	fmt.Printf("Seed URLs: %v \n", seedUrls)
 
 	pwi, err := fetcher.New(fetcher.CustomBrowserTypeOptions{
-		LaunchOptions:  playwright.BrowserTypeLaunchOptions{Headless: playwright.Bool(false)},
+		LaunchOptions:  playwright.BrowserTypeLaunchOptions{Headless: playwright.Bool(true)},
 		OnlySameOrigin: true,
 	})
 
@@ -57,25 +57,13 @@ func main() {
 		log.Fatalf("Failed to Create Fetcher Instance %v : ", err)
 	}
 	defer pwi.Close()
-	robotChecker := checker.New("*", func(u string) ([]byte, error) {
+	robotChecker := policy.New("*", func(u string) ([]byte, error) {
 		return pwi.FetchRobotsContent(u)
 	})
 
 	if allowed, _ := robotChecker.IsAllowed(seedUrls[0]); !allowed {
 		log.Printf("Seed Url is disalloweb in robots txt.")
 		return
-	}
-
-	fmt.Println("Visiting Seed URL...")
-	err = pwi.GoTo(seedUrls[0].String(), fetcher.CustomGotoOptions{
-		GotoOptions: playwright.PageGotoOptions{
-			WaitUntil: playwright.WaitUntilStateNetworkidle,
-		},
-		AllowInsecureConnections: false,
-		SessionType:              fetcher.Status(fetcher.CDPSession),
-	})
-	if err != nil {
-		log.Fatalf("Seed URL Error: %v", err)
 	}
 
 	jobQueue := make(chan fetcher.CrawlJob, 1000)
@@ -91,7 +79,7 @@ func main() {
 		close(jobQueue)
 		close(errCh)
 	}()
-	maxDepth := 1
+	maxDepth := 2
 	sem := make(chan struct{}, 5)
 
 	limiter := rate.NewLimiter(rate.Limit(1), 1)
