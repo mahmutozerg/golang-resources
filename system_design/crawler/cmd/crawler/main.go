@@ -39,7 +39,7 @@ func main() {
 
 	go func() {
 		<-sigCh
-		fmt.Println("\n⚠️  Sigterm or Interrupt received, please wait for recourses to be freed ")
+		fmt.Println("\nSigterm or Interrupt received, please wait for recourses to be freed ")
 		cancel()
 	}()
 
@@ -189,6 +189,12 @@ loop:
 				pwi.LocateLinks(job, jobQueue, errCh, visitWg)
 
 			}(job, filename)
+		case err, ok := <-errCh:
+			if !ok {
+				break loop
+			}
+			log.Printf("Crawler Error: %v", err)
+
 		}
 	}
 	fmt.Printf("%v", time.Since(t))
