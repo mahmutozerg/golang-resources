@@ -80,7 +80,7 @@ func (pwi *PwInstance) GoTo(url string, opt CustomGotoOptions) error {
 
 	if resp != nil {
 		if !(resp.Status() >= 200 && resp.Status() < 300) {
-			return fmt.Errorf("HTTP Hatası alındı (%d): %s", resp.Status(), resp.StatusText())
+			return fmt.Errorf("HTTP Err (%d): %s", resp.Status(), resp.StatusText())
 		}
 	}
 	return nil

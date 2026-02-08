@@ -1,53 +1,72 @@
-# ADR 0003: Multi-Page Parallel Crawling Architecture via Page Registry
+# ADR 0003: Queue-Based BFS Crawling Architecture with Worker Pool
 
 ## Context and Problem Statement
 
-Following the implementation of [ADR 0002](https://github.com/mahmutozerg/golang-resources/blob/main/system_design/crawler/docs/decisions/0002-mhtml-snapshot-strategy.md), our crawler successfully captures high-fidelity MHTML snapshots. However, the current implementation utilizes a single `playwright.Page` instance within `PwInstance`. This creates a bottleneck: the crawler operates sequentially (single-lane), waiting for one page to navigate and download before processing the next.
+Following the implementation of [ADR 0002](https://github.com/mahmutozerg/golang-resources/blob/main/system_design/crawler/docs/decisions/0002-mhtml-snapshot-strategy.md), our crawler needed to scale beyond sequential execution. The initial single-page approach created a bottleneck where navigation, fetching, and link extraction blocked each other.
 
-Attempting to run concurrent fetch operations on a single `Page` instance causes race conditions, navigation errors, and context mixing. To increase throughput and utilize system resources effectively, we need an architecture that supports concurrent page processing while maintaining strict isolation between different URL contexts.
+We needed an architecture that supports:
+
+1.  **Concurrency:** Processing multiple URLs simultaneously without race conditions.
+2.  **Depth Control:** Implementing Breadth-First Search (BFS) to respect crawl limits.
+3.  **Resource Safety:** Preventing memory leaks (zombie tabs) and ensuring graceful shutdown.
 
 ## Considered Options
 
-- **Sequential Execution (Current Status):** Continue using a single page. Safe but inefficient and non-scalable for large seed lists.
-- **Ephemeral Page per Request:** Open a new page, navigate, snapshot, and close it immediately within a single function scope. While thread-safe, this tightly couples navigation and fetching logic, making it harder to implement asynchronous "fire-and-forget" navigation patterns.
-- **Worker Pool with Independent Browser Contexts:** Create a full `BrowserContext` for every worker. This provides maximum isolation but incurs significant memory and CPU overhead.
-- **Page Registry (Map-based State Management):** Modify `PwInstance` to act as a manager that maintains a registry of active pages (`map[string]Page`). This decouples "Navigation" from "Fetching" and allows multiple tabs to exist simultaneously within a shared browser context.
+- **Sequential Execution:** Safe but inefficient.
+- **Fire-and-Forget Async Navigation:** Hard to control depth and rate limits effectively.
+- **Full Browser Context per Worker:** Too heavy on memory/CPU.
+- **Worker Pool with Page Registry (Chosen):** A hybrid approach using a buffered channel for BFS scheduling and a map-based registry for managing active Playwright pages.
 
 ## Decision Outcome
 
-Chosen option: **Page Registry (Map-based State Management)**.
+Chosen option: **Worker Pool with Page Registry & BFS Queue**.
 
-We will refactor `PwInstance` to manage a thread-safe collection of active pages using a `map[string]playwright.Page` protected by a `sync.RWMutex`.
+We refactored `PwInstance` to manage active pages via a registry, but drove the execution through a concurrent Worker Pool pattern consuming from a BFS Queue.
 
-**Reasoning:**
+**Key Architectural Changes:**
 
-1. **Isolation:** Each URL is processed in its own dedicated tab (`Page`), preventing DOM leakage or navigation conflicts between concurrent jobs.
-2. **Asynchronous Workflow:** This architecture enables a split between `GoToAsync` (Navigating/Registering) and `FetchMHTML` (Snapshotting/Cleaning). A worker can initiate navigation for multiple URLs without blocking the snapshotting process of others.
-3. **Resource Efficiency:** We share a single `BrowserContext` (cookies/cache shared) but multiply the `Page` instances (tabs), which is lighter than multiplying Contexts.
-4. **State Control:** The registry pattern allows us to track which URLs are currently "in-flight" (being processed).
+1.  **BFS Navigation:** Replaced linear execution with a `jobQueue` channel handling `CrawlJob` structs (URL + Depth).
+2.  **Page Registry:** `PwInstance` maintains a `map[string]playwright.Page` protected by `sync.RWMutex`. This allows `GoTo` and `FetchMHTML` to operate on specific tabs safely.
+3.  **Concurrency Control:** A semaphore channel (`sem`) limits the number of active browser tabs (e.g., 5) to prevent resource exhaustion.
+4.  **Active Cleanup Strategy:** Instead of a background cleaner routine, we utilized `defer` logic within workers to guarantee page closure, combined with Playwright's native navigation timeouts.
 
 ## Technical Implementation Details
 
-The `PwInstance` struct will be updated to include:
+### 1. State Management
 
-- `pages`: A `map[string]playwright.Page` to store active pages keyed by their target URL.
-- `pageMu`: A `sync.RWMutex` to ensure thread-safety when reading/writing to the map.
+- **Registry:** `map[string]playwright.Page` (Mutex-protected) stores active tabs.
+- **Visited Tracking:** A dedicated `VisitedLinks` struct with `sync.RWMutex` prevents cycles and duplicate processing (Check-Lock-Check pattern).
+- **Keep-Alive:** A "Dummy Page" is initialized in `New()` to prevent the browser process from terminating during idle rate-limit windows.
 
-**Workflow:**
+### 2. The Worker Lifecycle
 
-1. **GoToAsync:** Opens a new tab, locks the map, registers the page (`pages[url] = page`), unlocks, and initiates navigation in a goroutine.
-2. **FetchMHTML:** Accepts a URL, locks the map (Read), retrieves the corresponding `Page`, performs the MHTML snapshot via CDP, closes the page, and removes the entry from the map (Cleanup).
+The main loop consumes jobs and spawns goroutines. Each worker follows this strict lifecycle:
+
+1.  **Acquire Semaphore:** Block if max tabs reached.
+2.  **Defer Cleanup:** Register `defer pwi.ClosePage(url)` immediately to ensure cleanup on any error path.
+3.  **Navigate:** Call `pwi.GoTo` (creates tab, registers to map, navigates).
+4.  **Snapshot:** Call `pwi.FetchMHTML` (reads CDP session).
+5.  **Extract & Schedule:** Call `pwi.LocateLinks` to find child URLs and push them to `jobQueue` (incrementing Depth).
+
+### 3. Graceful Shutdown
+
+Implemented via `context.Context` and `os/signal`:
+
+- On `SIGTERM`/`Interrupt`, the context is canceled.
+- The main loop breaks, stopping new job scheduling.
+- Existing workers complete (or timeout), and `defer` handlers close browser resources cleanly.
 
 ## Consequences
 
-- **Good:** Significantly higher throughput (parallel crawling).
-- **Good:** Thread-safety is enforced via Mutex, preventing panic conditions during concurrent map access.
-- **Good:** Modular design allows separate timeouts/retries for navigation vs. snapshotting.
-- **Bad:** Increased complexity in error handling. If `GoToAsync` fails or panics, we must ensure the "orphan" page is removed from the registry to prevent memory leaks.
-- **Bad:** Higher memory consumption as multiple tabs are open simultaneously.
-- **Accepted Complexity:** We explicitly accept the responsibility of managing the lifecycle (Open -> Register -> Close -> Delete) of every page manually.
+- **Good:** **High Throughput:** Parallel processing limited only by bandwidth and semaphore count.
+- **Good:** **Resilience:** "Fail-Closed" logic and timeouts prevent the crawler from hanging on unresponsive sites.
+- **Good:** **Memory Efficiency:** Single Browser Context shared across lightweight Pages; tabs are closed immediately after processing.
+- **Bad:** **Complexity:** State management (Visited Map, Job Queue, Page Registry) is more complex than a simple recursive crawler.
+- **Accepted:** We accept the complexity of manual resource management (`defer ClosePage`) in exchange for granular control over the crawling process.
 
-## Future Work
+## Status
 
-- [x] **Worker Pool Limits:** Implement a semaphore or worker pool pattern to limit the maximum number of concurrent tabs (e.g., max 10 tabs) to prevent OOM (Out of Memory) crashes.
-- [x] **Orphan Cleanup:** Implement a background routine or timeout mechanism to clean up pages in the registry that hang indefinitely during navigation.
+**Implemented.**
+
+- [x] **Worker Pool Limits:** Semaphore pattern implemented.
+- [x] **Orphan Cleanup:** Solved via `defer` + Timeout (Active Cleanup) instead of background routines.

@@ -14,7 +14,7 @@ We are building a simple web crawler that saves pages as PDF files and also capt
 
 Chosen option: `Save pages by using headless browsers`, because it is easy to implement as a small demo.
 
-### Future work
+### Implemented
 
 - [x] Implement BFS using a queue
 - [x] Implement a multi-threaded crawler
