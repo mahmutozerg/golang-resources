@@ -2,6 +2,7 @@ package fetcher
 
 import (
 	"fmt"
+	"log"
 	"net/url"
 	"sync"
 
@@ -29,6 +30,10 @@ const (
 	WARCSession               // 1
 )
 
+type CrawlJob struct {
+	Url   *url.URL
+	Depth int
+}
 type CustomGotoOptions struct {
 	GotoOptions              playwright.PageGotoOptions
 	SessionType              Status
@@ -46,7 +51,7 @@ func (pwi *PwInstance) GoTo(url string, opt CustomGotoOptions) error {
 			newPage, err := pwi.context.NewPage()
 			if err != nil {
 				pwi.pageMu.Unlock()
-				return fmt.Errorf("yeni sekme açılamadı: %w", err)
+				return fmt.Errorf("Failed To Open New Page: %w", err)
 			}
 			pwi.pages[url] = newPage
 			p = newPage
@@ -81,15 +86,13 @@ func (pwi *PwInstance) GoTo(url string, opt CustomGotoOptions) error {
 	return nil
 }
 
-func (pwi *PwInstance) LocateLinks(parentUrl *url.URL, urlCh chan string, errCh chan error, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func (pwi *PwInstance) LocateLinks(parent CrawlJob, crawlCh chan CrawlJob, errCh chan error, wg *sync.WaitGroup) {
 	pwi.pageMu.RLock()
-	p, ok := pwi.pages[parentUrl.String()]
+	p, ok := pwi.pages[parent.Url.String()]
 	pwi.pageMu.RUnlock()
 
-	if !ok || parentUrl == nil {
-		errCh <- fmt.Errorf("Failed to find link in the map or parenUrl returned nil : %v", parentUrl)
+	if !ok || p == nil {
+		errCh <- fmt.Errorf("Failed to find link in the map or parenUrl returned nil : %v", p)
 		return
 	}
 
@@ -109,29 +112,37 @@ func (pwi *PwInstance) LocateLinks(parentUrl *url.URL, urlCh chan string, errCh 
 		if err != nil {
 			continue
 		}
-		absUrl := parentUrl.ResolveReference(relUrl)
+		absUrl := parent.Url.ResolveReference(relUrl)
 
-		if pwi.OnlySameOrigin && absUrl.Host != parentUrl.Host {
+		if pwi.OnlySameOrigin && absUrl.Host != parent.Url.Host {
 			continue
 		}
-		urlCh <- absUrl.String()
+		wg.Add(1)
+		crawlCh <- CrawlJob{absUrl, parent.Depth + 1}
 	}
 }
 
-func (pwi *PwInstance) FetchMHTML(url string) ([]byte, error) {
-	err := pwi.GoTo(url, CustomGotoOptions{
-		GotoOptions: playwright.PageGotoOptions{
-			WaitUntil: playwright.WaitUntilStateNetworkidle,
-			Timeout:   playwright.Float(30000),
-		},
-		SessionType:              Status(CDPSession),
-		AllowInsecureConnections: false,
-	})
+func (pwi *PwInstance) ClosePage(url string) {
+	pwi.pageMu.RLock()
+	page, ok := pwi.pages[url]
+	pwi.pageMu.RUnlock()
+
+	if !ok {
+		log.Println("ClosePage: Page Not Found (Internal Error)")
+		return
+	}
+	pwi.pageMu.Lock()
+	delete(pwi.pages, url)
+	pwi.pageMu.Unlock()
+
+	err := page.Close()
 
 	if err != nil {
-		// #TODO Handle cleanup at error
-		return nil, fmt.Errorf("Navigation Error: %w", err)
+		log.Println("ClosePage: Page Not Found (Internal Error)")
 	}
+
+}
+func (pwi *PwInstance) FetchMHTML(url string) ([]byte, error) {
 
 	pwi.pageMu.RLock()
 	page, ok := pwi.pages[url]
@@ -140,13 +151,6 @@ func (pwi *PwInstance) FetchMHTML(url string) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("Page Not Found (Internal Error)")
 	}
-
-	defer func() {
-		pwi.pageMu.Lock()
-		delete(pwi.pages, url)
-		pwi.pageMu.Unlock()
-		page.Close()
-	}()
 
 	cdpSession, err := pwi.context.NewCDPSession(page)
 	if err != nil {
@@ -215,6 +219,8 @@ func (pwi *PwInstance) FetchRobotsContent(url string) ([]byte, error) {
 	return []byte(content), nil
 }
 
+// Creates Playwright,browser,page,context,rwmu and dummy page
+// to make browser stay up
 func New(opt CustomBrowserTypeOptions) (*PwInstance, error) {
 	pw, err := playwright.Run()
 	if err != nil {
@@ -233,6 +239,7 @@ func New(opt CustomBrowserTypeOptions) (*PwInstance, error) {
 
 	pages := make(map[string]playwright.Page)
 
+	context.NewPage()
 	return &PwInstance{
 		pw:             pw,
 		browser:        browser,
