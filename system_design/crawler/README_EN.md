@@ -25,8 +25,7 @@ go mod tidy
 3. Install Playwright browsers and system dependencies:
 
 ```bash
-go run [github.com/playwright-community/playwright-go/cmd/playwright@latest](https://github.com/playwright-community/playwright-go/cmd/playwright@latest) install --with-deps
-
+go run github.com/playwright-community/playwright-go/cmd/playwright@latest install --with-deps
 ```
 
 ## Usage
