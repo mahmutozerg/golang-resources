@@ -8,6 +8,20 @@ import (
 	"strings"
 )
 
+const (
+	MinCrawlDelayInt      = 1
+	JobQueueSize          = 1000
+	MaxDepth              = 3
+	ConcurrentWorkerCount = 5
+	JitterMin             = 500
+	JitterMax             = 2000
+	GoToRegularTimeOutMs  = 60000
+	GoToRobotsTimeOutMs   = 10000
+
+	HostOutputFolderPerm os.FileMode = 0644
+	OutputFolderPerm     os.FileMode = 0755
+)
+
 // LoadSeeds reads URL in the given file
 // path: "./seed.txt" is relative to the caller
 func LoadSeeds(filePath string) ([]*url.URL, error) {

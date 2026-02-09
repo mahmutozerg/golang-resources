@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed** (Targeting Release v1.0.0)
+**Accepted** (Implemented in v1.0.0)
 
 ## Context and Problem Statement
 
@@ -24,8 +24,8 @@ We need to architect a system where concurrency is managed **per host**, allowin
   - _Pros:_ Strict isolation.
   - _Cons:_ Not scalable. Crawling 10,000 unique domains would spawn 10,000 goroutines, causing high memory usage and scheduler thrashing.
 
-- **Option 3: Dynamic Policy Registry (Proposed)**
-  - _Description:_ A centralized, thread-safe registry that stores policy objects (`RateLimiter` + `RobotRules`) keyed by the Host. Workers pull the specific policy for their current URL from this registry.
+- **Option 3: Dynamic Policy Registry (Chosen)**
+  - _Description:_ A centralized, thread-safe registry that stores policy objects (`DomainPolicy`) keyed by the Host. Workers pull the specific policy for their current URL from this registry.
   - _Pros:_ Decouples workers from domains. A fixed worker pool (e.g., 20) can handle an infinite number of domains efficiently.
   - _Cons:_ Introduces state management complexity (`sync.RWMutex` handling).
 
@@ -33,61 +33,50 @@ We need to architect a system where concurrency is managed **per host**, allowin
 
 Chosen option: **Option 3: Dynamic Policy Registry**.
 
-We propose to implement a `DomainRegistry` system for v1.0. This system will lazily initialize and cache policies for each unique host encountered during the crawl.
+We have implemented a `Registry` (Policy Checker) system. This system lazily initializes and caches policies for each unique host encountered during the crawl.
 
-**Proposed Architectural Changes:**
+**Key Architectural Decisions:**
 
-1.  **Registry Pattern:** Introduce a `map[string]*DomainData` protected by `sync.RWMutex`.
+1.  **Registry Pattern:** A `map[string]*DomainPolicy` protected by `sync.RWMutex`.
     - **Key:** The URL Host (e.g., `www.archlinux.org`).
-    - **Value:** A struct containing the dedicated `*rate.Limiter` and `*robot.Group`.
+    - **Value:** A struct containing the dedicated `*rate.Limiter` and `*robotstxt.Group`.
 
-2.  **Lazy Initialization (Just-In-Time):**
-    - Policies will not be pre-loaded.
-    - When a worker picks up a URL, it will query the registry.
-    - If the host is new, the worker will (under a lock) fetch `robots.txt`, calculate the specific delay, instantiate a new `rate.Limiter`, and store it.
+2.  **Dependency Injection via Closures:**
+    - To avoid circular dependencies between the `policy` package and the `fetcher` package, the `policy` package defines a `FetcherFunc` type. The `fetcher` implementation is injected into the `Registry` constructor as a closure.
 
-3.  **Worker Autonomy:**
-    - Workers will no longer wait on a global `limiter.Wait()`.
-    - Instead, they will retrieve the specific limiter for their target host and execute `hostLimiter.Wait(ctx)`.
+3.  **Optimized Lazy Initialization:**
+    - Network operations (fetching `robots.txt`) are performed **outside** the write lock to prevent blocking other workers reading existing policies.
 
-## Technical Design (Draft)
+4.  **Worker Autonomy:**
+    - Workers retrieve the specific limiter for their target host and execute `hostLimiter.Wait(ctx)`. Global limiting is removed.
 
-We intend to define a structure similar to:
+## Technical Design
+
+The core data structures are defined as follows:
 
 ```go
-// DomainData holds the policy for a specific domain
-type DomainData struct {
-    Limiter     *rate.Limiter
-    RobotRules  *robot.Group
-    LastVisited time.Time
+// DomainPolicy holds the policy for a specific domain
+type DomainPolicy struct {
+    Rule    *robotstxt.Group // Parsed rules (Disallow/Allow)
+    Limiter *rate.Limiter    // Dedicated rate limiter per host
 }
 
-// Registry manages the concurrent access to domain data
-type Registry struct {
-    data map[string]*DomainData
-    mu   sync.RWMutex
+// Checker (Registry) manages the concurrent access to domain data
+type Checker struct {
+    hostPolicies map[string]*DomainPolicy
+    // The rest remains unchanged
 }
 ```
 
-### The "GetOrInit" Flow
-
-To handle high concurrency safely, we will implement the **Double-Checked Locking** pattern:
-
-1. **Read Lock:** Check if host exists. If yes, return.
-2. **Write Lock:** If not, lock the map.
-3. **Re-Check:** Verify existence again (to handle race conditions).
-4. **Fetch & Create:** Download `robots.txt`, parse rules, create `rate.Limiter`.
-5. **Store:** Save to map and Unlock.
-
 ## Consequences
 
-- **Positive:** **True Parallelism:** `site-a.com` being slow will no longer block `site-b.com`.
-- **Positive:** **Politeness:** We will respect `Crawl-delay` individually for every site.
-- **Positive:** **Resource Efficiency:** Memory usage grows with _active_ domains, not total URLs.
-- **Negative:** **Memory Growth:** Long-running crawls visiting millions of unique domains may bloat the map (requires future LRU eviction strategy).
-- **Negative:** **Initial Latency:** The first request to any new domain will incur the overhead of fetching `robots.txt`.
+- **Positive:** **True Parallelism:** `site-a.com` logic is completely isolated from `site-b.com`.
+- **Positive:** **Non-Blocking I/O:** Moving the `robots.txt` fetch outside the mutex ensures that network latency does not block the registry for other readers.
+- **Positive:** **Robustness:** If `robots.txt` cannot be fetched or parsed, the system falls back to a safe default policy (Allow All + Default Rate Limit).
+- **Negative:** **Memory Growth:** The map grows with every visited unique domain.
+- **Negative:** **Initial Latency:** The first visit to a new domain incurs a "cold start" penalty for fetching rules.
 
-## Future Work (Post v1.0)
+## Future Work
 
-- [ ] **Persisted Registry:** Save known `robots.txt` rules to disk/DB to avoid re-fetching on restart.
-- [ ] **LRU Eviction:** Implement a mechanism to remove policies for stale domains to save RAM.
+- [ ] **LRU Eviction:** Implement a mechanism to remove policies for stale domains to cap memory usage.
+- [ ] **Persisted Cache:** Store parsed `robots.txt` rules on disk to survive restarts.

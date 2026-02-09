@@ -1,1 +1,1 @@
-https://aur.archlinux.org/packages/playwright
+https://wiki.archlinux.org/title/Main_page

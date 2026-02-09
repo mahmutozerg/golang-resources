@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"sync"
 
+	"github.com/mahmutozerg/golang-resources/system_design/crawler/internal/config"
 	"github.com/playwright-community/playwright-go"
 )
 
@@ -206,7 +207,7 @@ func (pwi *PwInstance) FetchRobotsContent(url string) ([]byte, error) {
 
 	resp, err := page.Goto(url, playwright.PageGotoOptions{
 		WaitUntil: playwright.WaitUntilStateDomcontentloaded,
-		Timeout:   playwright.Float(10000),
+		Timeout:   playwright.Float(config.GoToRobotsTimeOutMs),
 	})
 
 	if err != nil {
