@@ -20,6 +20,7 @@ const (
 
 	HostOutputFolderPerm os.FileMode = 0644
 	OutputFolderPerm     os.FileMode = 0755
+	EvictStaleTime                   = "1m"
 )
 
 // LoadSeeds reads URL in the given file

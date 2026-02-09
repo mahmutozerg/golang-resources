@@ -1,10 +1,15 @@
 package registery
 
 import (
+	"context"
+	"fmt"
+	"maps"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/mahmutozerg/golang-resources/system_design/crawler/internal/config"
 	"github.com/temoto/robotstxt"
 	"golang.org/x/time/rate"
 )
@@ -20,14 +25,21 @@ type Checker struct {
 type DomainPolicy struct {
 	Rule    *robotstxt.Group
 	Limiter *rate.Limiter
+	Lru     atomic.Int64
 }
 
-func New(agentName string, fetcher FetcherFunc) *Checker {
-	return &Checker{
+func New(agentName string, fetcher FetcherFunc, ctx context.Context) *Checker {
+
+	c := &Checker{
 		hostRules: make(map[string]*DomainPolicy),
 		AgentName: agentName,
 		fetcher:   fetcher,
 	}
+	go func() {
+		evictStale(c, ctx)
+	}()
+
+	return c
 }
 
 func (c *Checker) GetPolicy(targetUrl *url.URL) (*DomainPolicy, error) {
@@ -36,7 +48,9 @@ func (c *Checker) GetPolicy(targetUrl *url.URL) (*DomainPolicy, error) {
 	c.rwMu.RLock()
 	existingPolicy, ok := c.hostRules[host]
 	c.rwMu.RUnlock()
+
 	if ok {
+		existingPolicy.Lru.Store(time.Now().UnixNano())
 		return existingPolicy, nil
 	}
 
@@ -68,7 +82,38 @@ func (c *Checker) GetPolicy(targetUrl *url.URL) (*DomainPolicy, error) {
 		return existingPolicy, nil
 	}
 
+	newPolicy.Lru.Store(time.Now().UnixNano())
 	c.hostRules[host] = newPolicy
 
 	return newPolicy, nil
+}
+
+func evictStale(c *Checker, ctx context.Context) {
+
+	d, _ := time.ParseDuration(config.EvictStaleTime)
+
+	t := time.NewTicker(d)
+
+loop:
+	for {
+
+		select {
+		case <-t.C:
+			c.rwMu.Lock()
+			startLen := len(c.hostRules)
+			fmt.Printf("Timer reached, evict stale active starting len %v", startLen)
+
+			threshold := time.Now().Add(-d).UnixNano()
+
+			maps.DeleteFunc(c.hostRules, func(k string, v *DomainPolicy) bool {
+				return v.Lru.Load() < threshold
+			})
+			c.rwMu.Unlock()
+			fmt.Printf("Cleanup completed,Cleaned links %v", startLen-len(c.hostRules))
+
+		case <-ctx.Done():
+			break loop
+		}
+	}
+
 }

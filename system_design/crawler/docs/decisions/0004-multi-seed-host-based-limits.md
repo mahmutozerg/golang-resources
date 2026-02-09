@@ -76,7 +76,10 @@ type Checker struct {
 - **Negative:** **Memory Growth:** The map grows with every visited unique domain.
 - **Negative:** **Initial Latency:** The first visit to a new domain incurs a "cold start" penalty for fetching rules.
 
+## Implemented:
+
+- **LRU Eviction:** Implement a mechanism to remove policies for stale domains to cap memory usage.
+
 ## Future Work
 
-- [ ] **LRU Eviction:** Implement a mechanism to remove policies for stale domains to cap memory usage.
 - [ ] **Persisted Cache:** Store parsed `robots.txt` rules on disk to survive restarts.
