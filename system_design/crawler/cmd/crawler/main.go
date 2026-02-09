@@ -60,7 +60,7 @@ func main() {
 
 	robotChecker := policy.New("MyCrawlerBot", func(u string) ([]byte, error) {
 		return pwi.FetchRobotsContent(u)
-	})
+	}, ctx)
 
 	jobQueue := make(chan fetcher.CrawlJob, config.JobQueueSize)
 	visits := VisitedLinks{Visited: make(map[string]bool)}
@@ -141,11 +141,21 @@ loop:
 					if delay > time.Second {
 						log.Printf("[Worker-%03d]  Rate Limit: Waiting %v for %s...", id, delay, target.Url.Host)
 					}
-					time.Sleep(delay)
+					select {
+					case <-ctx.Done():
+						reservation.Cancel()
+						log.Printf("[Worker-%03d]  Shutdown received, cancelling worker wait...", id)
+						return
+					case <-time.After(delay):
+					}
 				}
 
 				jitter := time.Duration(rand.Intn(config.JitterMax)+config.JitterMin) * time.Millisecond
-				time.Sleep(jitter)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(jitter):
+				}
 
 				outDir := storage.CreateOutDir("../../files", target.Url)
 				filename := filepath.Join(outDir, time.Now().UTC().Format("20060102T150405")+".mhtml")
