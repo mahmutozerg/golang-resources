@@ -25,8 +25,7 @@ go mod tidy
 3. Playwright sürücülerini ve bağımlılıklarını yükle:
 
 ```bash
-go run [github.com/playwright-community/playwright-go/cmd/playwright@latest](https://github.com/playwright-community/playwright-go/cmd/playwright@latest) install --with-deps
-
+go run github.com/playwright-community/playwright-go/cmd/playwright@latest install --with-deps
 ```
 
 ## Kullanım
