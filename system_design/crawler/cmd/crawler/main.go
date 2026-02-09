@@ -130,9 +130,18 @@ loop:
 					return
 				}
 
-				if err := pol.Limiter.Wait(ctx); err != nil {
-					log.Printf("[Worker-%03d] Limiter Cancelled: %v", id, err)
+				reservation := pol.Limiter.Reserve()
+				if !reservation.OK() {
+					log.Printf("[Worker-%03d] Limiter Error: Reservation failed", id)
 					return
+				}
+
+				delay := reservation.Delay()
+				if delay > 0 {
+					if delay > time.Second {
+						log.Printf("[Worker-%03d]  Rate Limit: Waiting %v for %s...", id, delay, target.Url.Host)
+					}
+					time.Sleep(delay)
 				}
 
 				jitter := time.Duration(rand.Intn(config.JitterMax)+config.JitterMin) * time.Millisecond
