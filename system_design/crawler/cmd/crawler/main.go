@@ -121,7 +121,7 @@ loop:
 				defer visitWg.Done()
 				defer func() { <-sem }()
 				urlStr := target.Url.String()
-				if config.IsFileByExtension(target.Url) {
+				if config.ShouldSkipLink(target.Url) {
 					log.Printf("[Worker-%03d] File link detected (by ext): %s, skipping", id, target.Url)
 					return
 				}

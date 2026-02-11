@@ -1,51 +1,75 @@
 package config
 
 import (
+	"net/http"
 	"net/url"
-	"path/filepath"
+	"path"
 	"strings"
+	"time"
 )
 
-var fileExts = map[string]struct{}{
-	".pdf": {}, ".ps": {}, ".eps": {}, ".rtf": {}, ".txt": {}, ".md": {},
-	".doc": {}, ".docx": {}, ".odt": {}, ".pages": {},
-	".xls": {}, ".xlsx": {}, ".ods": {}, ".csv": {}, ".tsv": {},
-	".ppt": {}, ".pptx": {}, ".odp": {}, ".key": {},
-	".tex": {}, ".epub": {}, ".mobi": {}, ".azw": {}, ".azw3": {},
+var skipExts = map[string]struct{}{
+	".pdf": {}, ".doc": {}, ".docx": {}, ".xls": {}, ".xlsx": {}, ".ppt": {}, ".pptx": {},
+	".odt": {}, ".ods": {}, ".odp": {}, ".rtf": {}, ".txt": {}, ".csv": {}, ".tsv": {},
+	".epub": {}, ".mobi": {}, ".azw3": {}, ".djvu": {},
 
-	".jpg": {}, ".jpeg": {}, ".png": {}, ".gif": {}, ".webp": {}, ".bmp": {}, ".tif": {}, ".tiff": {},
-	".svg": {}, ".ico": {}, ".heic": {}, ".heif": {}, ".avif": {}, ".raw": {}, ".cr2": {}, ".nef": {},
+	".zip": {}, ".rar": {}, ".7z": {}, ".tar": {}, ".gz": {}, ".tgz": {}, ".bz2": {},
+	".xz": {}, ".iso": {}, ".dmg": {}, ".img": {}, ".toast": {}, ".vcd": {},
 
-	".mp3": {}, ".wav": {}, ".flac": {}, ".aac": {}, ".m4a": {}, ".ogg": {}, ".opus": {}, ".wma": {},
+	".jpg": {}, ".jpeg": {}, ".png": {}, ".gif": {}, ".webp": {}, ".bmp": {}, ".tiff": {},
+	".ico": {}, ".svg": {}, ".heic": {}, ".psd": {}, ".ai": {}, ".raw": {}, ".cr2": {},
 
-	".mp4": {}, ".m4v": {}, ".mkv": {}, ".webm": {}, ".mov": {}, ".avi": {}, ".wmv": {}, ".flv": {},
-	".mpeg": {}, ".mpg": {}, ".3gp": {}, ".ts": {},
+	".mp3": {}, ".wav": {}, ".flac": {}, ".aac": {}, ".ogg": {}, ".wma": {}, ".m4a": {}, ".opus": {},
 
-	".zip": {}, ".rar": {}, ".7z": {}, ".tar": {}, ".gz": {}, ".tgz": {}, ".bz2": {}, ".xz": {}, ".zst": {},
-	".iso": {}, ".dmg": {}, ".img": {},
+	".mp4": {}, ".mkv": {}, ".avi": {}, ".mov": {}, ".wmv": {}, ".flv": {}, ".webm": {},
+	".mpeg": {}, ".mpg": {}, ".m4v": {}, ".3gp": {}, ".ts": {},
 
-	".exe": {}, ".msi": {}, ".msp": {}, ".appx": {}, ".appxbundle": {}, ".msix": {}, ".msixbundle": {},
-	".deb": {}, ".rpm": {}, ".apk": {}, ".aab": {}, ".ipa": {}, ".pkg": {}, ".sh": {}, ".bat": {}, ".cmd": {},
+	".exe": {}, ".msi": {}, ".apk": {}, ".app": {}, ".deb": {}, ".rpm": {}, ".jar": {},
+	".bin": {}, ".sh": {}, ".bat": {}, ".cmd": {}, ".ps1": {}, ".pkg": {},
 
-	".bin": {}, ".dat": {}, ".db": {}, ".sqlite": {}, ".sqlite3": {}, ".parquet": {}, ".orc": {}, ".feather": {},
-	".sav": {},
+	".json": {}, ".xml": {}, ".yaml": {}, ".sql": {}, ".db": {}, ".sqlite": {},
+	".ttf": {}, ".otf": {}, ".woff": {}, ".woff2": {},
 
-	".ttf": {}, ".otf": {}, ".woff": {}, ".woff2": {}, ".eot": {},
-
-	".pem": {}, ".crt": {}, ".cer": {}, ".der": {}, ".pfx": {}, ".p12": {},
-
-	".jar": {}, ".war": {}, ".ear": {},
-	".dylib": {}, ".so": {}, ".dll": {},
-	".torrent": {},
+	".dwg": {}, ".dxf": {}, ".stl": {}, ".obj": {}, ".fbx": {}, ".blend": {},
 }
 
-func IsFileByExtension(u *url.URL) bool {
-	p := strings.ToLower(u.Path)
+func ShouldSkipLink(u *url.URL) bool {
 
-	ext := strings.ToLower(filepath.Ext(p))
-	if ext == "" {
-		return false
+	ext := strings.ToLower(path.Ext(u.Path))
+
+	if _, exists := skipExts[ext]; exists {
+		return true
 	}
-	_, ok := fileExts[ext]
-	return ok
+
+	if ext == "" {
+		return isContentTypeFile(u.String())
+	}
+
+	return false
+}
+
+func isContentTypeFile(link string) bool {
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	req, err := http.NewRequest("HEAD", link, nil)
+	if err != nil {
+		return true
+	}
+
+	req.Header.Set("User-Agent", "*")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return true
+	}
+	defer resp.Body.Close()
+
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.Contains(strings.ToLower(contentType), "text/html") {
+		return true
+	}
+
+	return false
 }
