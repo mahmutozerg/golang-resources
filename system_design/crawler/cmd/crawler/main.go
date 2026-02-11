@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -119,6 +120,11 @@ loop:
 			go func(id int, target fetcher.CrawlJob) {
 				defer visitWg.Done()
 				defer func() { <-sem }()
+				urlStr := target.Url.String()
+				if config.IsFileByExtension(target.Url) {
+					log.Printf("[Worker-%03d] File link detected (by ext): %s, skipping", id, target.Url)
+					return
+				}
 
 				pol, err := robotChecker.GetPolicy(target.Url)
 				if err != nil {
@@ -161,7 +167,6 @@ loop:
 				outDir := storage.CreateOutDir("../../files", target.Url)
 				filename := filepath.Join(outDir, time.Now().UTC().Format("20060102T150405")+".mhtml")
 
-				urlStr := target.Url.String()
 				defer pwi.ClosePage(urlStr)
 
 				err = pwi.GoTo(urlStr, fetcher.CustomGotoOptions{

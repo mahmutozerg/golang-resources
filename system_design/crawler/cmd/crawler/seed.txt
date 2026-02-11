@@ -1,3 +1,2 @@
 https://go.dev/
-https://news.ycombinator.com/
 https://www.wikipedia.org/

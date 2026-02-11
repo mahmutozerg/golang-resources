@@ -1,6 +1,6 @@
 module github.com/mahmutozerg/golang-resources/system_design/crawler
 
-go 1.25.6
+go 1.26.0
 
 require (
 	github.com/playwright-community/playwright-go v0.5200.1

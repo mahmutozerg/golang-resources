@@ -12,7 +12,7 @@ const (
 	MinCrawlDelayInt      = 1
 	JobQueueSize          = 1000
 	MaxDepth              = 3
-	ConcurrentWorkerCount = 5
+	ConcurrentWorkerCount = 25
 	JitterMin             = 500
 	JitterMax             = 2000
 	GoToRegularTimeOutMs  = 60000
