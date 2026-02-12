@@ -70,9 +70,17 @@ func (c *Checker) GetPolicy(targetUrl *url.URL) (*DomainPolicy, error) {
 		}
 	}
 
-	newPolicy := &DomainPolicy{
-		Rule:    rule,
-		Limiter: rate.NewLimiter(rate.Every(delay), 1),
+	var newPolicy *DomainPolicy
+	if delay < rule.CrawlDelay {
+		newPolicy = &DomainPolicy{
+			Rule:    rule,
+			Limiter: rate.NewLimiter(rate.Every(delay), 1),
+		}
+	} else {
+		newPolicy = &DomainPolicy{
+			Rule:    rule,
+			Limiter: rate.NewLimiter(rate.Every(delay), 1),
+		}
 	}
 
 	c.rwMu.Lock()

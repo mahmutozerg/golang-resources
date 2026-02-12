@@ -144,8 +144,29 @@ loop:
 				}
 
 				delay := reservation.Delay()
+				if delay > 3*time.Second {
+					reservation.Cancel()
+
+					visits.rwMu.Lock()
+					delete(visits.Visited, urlStr)
+					visits.rwMu.Unlock()
+
+					log.Printf("[Worker-%03d] Too fast for %s. Re-queuing in %v (Non-blocking)", id, target.Url.Host, delay)
+					visitWg.Add(1)
+
+					time.AfterFunc(delay, func() {
+						select {
+						case <-ctx.Done():
+							visitWg.Done()
+						case jobQueue <- target:
+						}
+					})
+
+					return
+				}
+
 				if delay > 0 {
-					if delay > time.Second {
+					if delay > 3*time.Second {
 						log.Printf("[Worker-%03d]  Rate Limit: Waiting %v for %s...", id, delay, target.Url.Host)
 					}
 					select {

@@ -63,7 +63,7 @@ func (pwi *PwInstance) GoTo(url string, opt CustomGotoOptions) error {
 	switch opt.SessionType {
 	case Status(CDPSession):
 		p.AddStyleTag(playwright.PageAddStyleTagOptions{
-			Content: playwright.String(`
+			Content: new(`
 			* {
 				animation: none !important;
 				transition: none !important;
