@@ -108,30 +108,27 @@ loop:
 
 			go func(id int, target fetcher.CrawlJob) {
 				defer func() { <-sem }()
-
 				defer visitWg.Done()
+
 				if config.ShouldSkipLink(target.Url) {
 					log.Printf("[Worker-%03d] File link detected (by ext): %s, skipping", id, target.Url)
 					return
 				}
 
-				err := worker.Process(
-					target,
-					pwi,
-					robotChecker,
-					errCh,
-					jobQueue,
-					&visitWg,
-					&visits,
-					ctx,
-					id,
-				)
+				processor := &worker.Processor{
+					Fetcher: pwi,
+					Checker: robotChecker,
+					ErrCh:   errCh,
+					JobCh:   jobQueue,
+					VisitWg: &visitWg,
+					Visits:  &visits,
+					ID:      id,
+				}
 
-				if err != nil {
+				if err := processor.Process(ctx, target); err != nil {
 					errCh <- err
 					log.Printf("[Worker-%03d] Error: %v", id, err)
 				}
-
 			}(workerID, job)
 
 		case err, ok := <-errCh:
